@@ -1,13 +1,133 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    as_completed,
+)
 
-from app.services.downloader import VideoDownloader
-from app.jobs.manager import job_manager
+from app.services.downloader import (
+    VideoDownloader
+)
+
+from app.jobs.manager import (
+    job_manager
+)
 
 
 class PlaylistDownloader:
 
-    # Maximum number of videos downloading simultaneously
     MAX_WORKERS = 4
+
+    # =====================================================
+    # PROGRESS HOOK
+    # =====================================================
+
+    def create_progress_hook(
+        self,
+        job_id: str,
+        video_id: str,
+    ):
+
+        def progress_hook(data):
+
+            status = data.get(
+                "status"
+            )
+
+            # ---------------------------------------------
+            # DOWNLOADING
+            # ---------------------------------------------
+
+            if status == "downloading":
+
+                downloaded = data.get(
+                    "downloaded_bytes",
+                    0
+                )
+
+                total = (
+                    data.get("total_bytes")
+                    or
+                    data.get(
+                        "total_bytes_estimate",
+                        0
+                    )
+                )
+
+                if total:
+
+                    percentage = (
+                        downloaded / total
+                    ) * 100
+
+                else:
+
+                    percentage = 0.0
+
+                speed = data.get(
+                    "_speed_str"
+                )
+
+                eta = data.get(
+                    "_eta_str"
+                )
+
+                filename = data.get(
+                    "filename"
+                )
+
+                # Update video
+                job_manager.update_video(
+                    job_id,
+                    video_id,
+
+                    status="downloading",
+
+                    progress=round(
+                        percentage,
+                        2
+                    ),
+
+                    downloaded_bytes=downloaded,
+
+                    total_bytes=total,
+
+                    speed=speed,
+
+                    eta=eta,
+
+                    filepath=filename,
+                )
+
+            # ---------------------------------------------
+            # FINISHED
+            # ---------------------------------------------
+
+            elif status == "finished":
+
+                filename = data.get(
+                    "filename"
+                )
+
+                job_manager.update_video(
+                    job_id,
+                    video_id,
+
+                    status="processing",
+
+                    progress=100.0,
+
+                    downloaded_bytes=data.get(
+                        "downloaded_bytes",
+                        0
+                    ),
+
+                    filepath=filename,
+                )
+
+        return progress_hook
+
+    # =====================================================
+    # DOWNLOAD SINGLE VIDEO
+    # =====================================================
 
     def download_single_video(
         self,
@@ -15,7 +135,14 @@ class PlaylistDownloader:
         video: dict,
     ):
 
-        video_url = video.get("url")
+        video_id = video.get(
+            "id"
+        )
+
+        video_url = video.get(
+            "url"
+        )
+
         video_title = video.get(
             "title",
             "Unknown title"
@@ -29,17 +156,48 @@ class PlaylistDownloader:
                     "Video URL is missing"
                 )
 
-            print(
-                f"[JOB {job_id}] "
-                f"Starting: {video_title}"
+            # Mark video as downloading
+            job_manager.update_video(
+                job_id,
+                video_id,
+                status="downloading",
             )
 
-            # Create downloader for this worker
+            # Set current video
+            job_manager.update_job(
+                job_id,
+                current_video=video_title,
+            )
+
+            # Create progress hook
+            progress_hook = (
+                self.create_progress_hook(
+                    job_id,
+                    video_id,
+                )
+            )
+
+            # Create downloader
             downloader = VideoDownloader()
 
-            # Download video
-            downloader.download(
-                video_url
+            # Download
+            filepath = downloader.download(
+                video_url,
+                progress_hook=progress_hook,
+            )
+
+            # Mark completed
+            job_manager.update_video(
+                job_id,
+                video_id,
+
+                status="completed",
+
+                progress=100.0,
+
+                filepath=filepath,
+
+                eta=None,
             )
 
             # Update completed count
@@ -47,22 +205,20 @@ class PlaylistDownloader:
                 job_id
             )
 
-            if not job:
-                return
+            if job:
 
-            job_manager.update_job(
-                job_id,
-                completed=job["completed"] + 1,
-            )
+                job_manager.update_job(
+                    job_id,
 
-            print(
-                f"[JOB {job_id}] "
-                f"Completed: {video_title}"
-            )
+                    completed=(
+                        job["completed"] + 1
+                    ),
+                )
 
             return {
                 "status": "success",
-                "video": video_title,
+                "video_id": video_id,
+                "filepath": filepath,
             }
 
         except Exception as error:
@@ -73,8 +229,16 @@ class PlaylistDownloader:
             )
 
             print(
-                f"[JOB {job_id}] "
                 f"Error: {error}"
+            )
+
+            job_manager.update_video(
+                job_id,
+                video_id,
+
+                status="failed",
+
+                error=str(error),
             )
 
             job = job_manager.get_job(
@@ -85,15 +249,21 @@ class PlaylistDownloader:
 
                 job_manager.update_job(
                     job_id,
-                    failed=job["failed"] + 1,
+
+                    failed=(
+                        job["failed"] + 1
+                    ),
                 )
 
             return {
                 "status": "failed",
-                "video": video_title,
+                "video_id": video_id,
                 "error": str(error),
             }
 
+    # =====================================================
+    # DOWNLOAD PLAYLIST
+    # =====================================================
 
     def download_playlist(
         self,
@@ -101,32 +271,26 @@ class PlaylistDownloader:
         videos: list[dict],
     ):
 
-        # Mark job as downloading
         job_manager.update_job(
             job_id,
             status="downloading",
         )
 
-        total_videos = len(videos)
-
-        print(
-            f"[JOB {job_id}] "
-            f"Starting playlist download"
+        total_videos = len(
+            videos
         )
 
         print(
             f"[JOB {job_id}] "
-            f"Total videos: {total_videos}"
+            f"Starting {total_videos} videos"
         )
 
-        # Create thread pool
         with ThreadPoolExecutor(
             max_workers=self.MAX_WORKERS
         ) as executor:
 
             futures = []
 
-            # Submit all videos
             for video in videos:
 
                 future = executor.submit(
@@ -135,9 +299,10 @@ class PlaylistDownloader:
                     video,
                 )
 
-                futures.append(future)
+                futures.append(
+                    future
+                )
 
-            # Wait for all downloads
             for future in as_completed(
                 futures
             ):
@@ -161,17 +326,24 @@ class PlaylistDownloader:
         if not job:
             return
 
-        completed = job["completed"]
-        failed = job["failed"]
+        completed = job[
+            "completed"
+        ]
 
-        # Determine final status
+        failed = job[
+            "failed"
+        ]
+
+        # Final status
         if completed == total_videos:
 
             final_status = "completed"
 
         elif completed + failed == total_videos:
 
-            final_status = "completed_with_errors"
+            final_status = (
+                "completed_with_errors"
+            )
 
         else:
 
@@ -180,19 +352,10 @@ class PlaylistDownloader:
         job_manager.update_job(
             job_id,
             status=final_status,
+            current_video=None,
         )
 
         print(
             f"[JOB {job_id}] "
-            f"Playlist finished"
-        )
-
-        print(
-            f"[JOB {job_id}] "
-            f"Completed: {completed}"
-        )
-
-        print(
-            f"[JOB {job_id}] "
-            f"Failed: {failed}"
+            f"Finished"
         )

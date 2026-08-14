@@ -92,7 +92,8 @@ async def download_playlist(
 
         # Create download job
         job = job_manager.create_job(
-            total_videos=total_videos
+            total_videos=total_videos,
+            videos=playlist["videos"]
         )
 
         # Start playlist download in background
