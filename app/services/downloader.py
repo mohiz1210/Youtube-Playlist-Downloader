@@ -147,26 +147,21 @@ class VideoDownloader:
  
         options = {
             "outtmpl": output_template,
- 
-            # Set False temporarily so deployment logs
-            # show useful yt-dlp information.
-            "quiet": False,
- 
-            "no_warnings": False,
- 
+            "quiet": True,
+            "no_warnings": True,
             "noplaylist": True,
- 
             "format": format_spec,
- 
-            # Needed when video and audio are downloaded
-            # separately.
             "merge_output_format": "mp4",
- 
-            # Avoid leaving partial files if download fails.
             "continuedl": True,
- 
-            # Don't download an entire playlist accidentally.
-            "playlistend": 1,
+            "nocheckcertificate": True,
+            "geo_bypass": True,
+            "check_formats": None,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android"],
+                    "player_skip": ["webpage", "configs"],
+                }
+            },
         }
  
         if FFMPEG_EXE:
@@ -188,6 +183,7 @@ class VideoDownloader:
             options["progress_hooks"] = [progress_hook]
  
         return options
+
  
     def download(
         self,
@@ -293,7 +289,7 @@ class VideoDownloader:
                 # Trying multiple clients before giving up is far
                 # more robust than hardcoding a single one.
                 # --------------------------------------------------
-                fallback_clients = ["ios", "mweb", "tv", "android"]
+                fallback_clients = ["android", "tv_embedded", "web"]
                 fallback_format = (
                     "b/best" if format_type == "video" else "bestaudio/best"
                 )
@@ -309,9 +305,11 @@ class VideoDownloader:
                     fallback_options["format"] = fallback_format
                     fallback_options["extractor_args"] = {
                         "youtube": {
-                            "player_client": [client]
+                            "player_client": [client],
+                            "player_skip": ["webpage", "configs"],
                         }
                     }
+
  
                     try:
                         with yt_dlp.YoutubeDL(fallback_options) as ydl:
@@ -403,8 +401,12 @@ class VideoDownloader:
             if file_size <= 0:
                 raise RuntimeError("Downloaded file is empty.")
  
-            print(f"Download completed successfully: {filepath}")
+            try:
+                print(f"Download completed successfully: {filepath}")
+            except Exception:
+                print("Download completed successfully.")
             print(f"File size: {file_size / (1024 * 1024):.2f} MB")
+
  
         except OSError as error:
             raise RuntimeError(
