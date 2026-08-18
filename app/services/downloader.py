@@ -52,15 +52,16 @@ class VideoDownloader:
             "quiet": True,
             "noplaylist": True,
             "format": format_spec,
-            "ignoreerrors": True,
             "js_runtimes": {
                 "node": {}
             },
             "extractor_args": {
                 "youtube": {
                     "player_client": [
+                        "mweb",
                         "android",
-                        "web_creator"
+                        "ios",
+                        "web"
                     ]
                 }
             },
@@ -136,5 +137,9 @@ class VideoDownloader:
                     latest = max(all_files, key=lambda f: f.stat().st_mtime)
                     filepath = str(latest)
 
+            if not os.path.exists(filepath):
+                raise RuntimeError("Video download failed. The video file could not be created or YouTube rate-limited the request.")
+
             return filepath
+
 
