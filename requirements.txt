@@ -18,7 +18,19 @@ pydantic-settings==2.10.1
 # (--impersonate) so requests look like real Chrome instead of a bare
 # Python client — reduces bot-detection false positives without needing
 # any cookies or account.
-yt-dlp[default,curl-cffi]
+#
+# PINNED WITH A FLOOR, NOT LEFT BARE: YouTube changes its player/signature
+# format often enough that yt-dlp needs frequent updates just to keep
+# working ("Failed to extract any player response" / "The page needs to
+# be reloaded" are yt-dlp's own signature errors for "I'm out of date").
+# A bare "yt-dlp" line only ever resolves to latest on that package's
+# FIRST install into an environment — hosts like Streamlit Community
+# Cloud reuse/incrementally update their environment across deploys and
+# won't re-resolve an already-satisfied unpinned package just because you
+# pushed unrelated code. Bump this floor whenever downloads start failing
+# with an extraction error and yt-dlp's release notes look relevant —
+# changing the line is what forces a re-resolve on the next deploy.
+yt-dlp[default,curl-cffi]>=2026.7.4
 aiofiles==24.1.0
 imageio-ffmpeg
 
