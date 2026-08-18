@@ -20,14 +20,35 @@ class VideoDownloader:
         self,
         subfolder: str | None = None,
         cookiefile: str | None = None,
+        cookies_from_browser: str | None = None,
         proxy: str | None = None,
     ):
         self.download_dir = create_download_directory(subfolder)
-        self.cookiefile = cookiefile
+        # Cookies are the real fix for YouTube's "Sign in to confirm
+        # you're not a bot" error — the player-client spoofing below is
+        # only a fallback and YouTube increasingly blocks it outright.
+        # Point YTDLP_COOKIES_FILE at a cookies.txt, or (easiest when
+        # running locally) set YTDLP_COOKIES_FROM_BROWSER to the name of
+        # a browser you're logged into YouTube with, e.g. "chrome",
+        # "edge", "firefox", "brave" (optionally "chrome:ProfileName").
+        self.cookiefile = cookiefile or os.environ.get("YTDLP_COOKIES_FILE")
+        self.cookies_from_browser = cookies_from_browser or os.environ.get(
+            "YTDLP_COOKIES_FROM_BROWSER"
+        )
         # Optional proxy, e.g. "http://user:pass@host:port".
         # Can also be supplied via env var so you don't have to
         # hardcode credentials anywhere.
         self.proxy = proxy or os.environ.get("YTDLP_PROXY")
+
+    # ---------------------------------------------------------
+    # COOKIE OPTIONS HELPER
+    # ---------------------------------------------------------
+
+    def _cookiesfrombrowser_tuple(self):
+        """Parse YTDLP_COOKIES_FROM_BROWSER ("chrome" or "chrome:Profile 1")
+        into the (browser, profile, keyring, container) tuple yt-dlp expects."""
+        browser, _, profile = self.cookies_from_browser.partition(":")
+        return (browser.strip(), profile.strip() or None, None, None)
  
     # ---------------------------------------------------------
     # FORMAT SELECTION
@@ -111,7 +132,9 @@ class VideoDownloader:
  
         if self.cookiefile and os.path.exists(self.cookiefile):
             options["cookiefile"] = self.cookiefile
- 
+        elif self.cookies_from_browser:
+            options["cookiesfrombrowser"] = self._cookiesfrombrowser_tuple()
+
         if self.proxy:
             options["proxy"] = self.proxy
  
@@ -189,6 +212,10 @@ class VideoDownloader:
                 }
             },
         }
+        if self.cookiefile and os.path.exists(self.cookiefile):
+            opts["cookiefile"] = self.cookiefile
+        elif self.cookies_from_browser:
+            opts["cookiesfrombrowser"] = self._cookiesfrombrowser_tuple()
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -277,8 +304,12 @@ class VideoDownloader:
             print("FFmpeg: NOT FOUND")
  
         if self.cookiefile:
-            print(f"Cookies: {self.cookiefile}")
- 
+            print(f"Cookies: file={self.cookiefile}")
+        elif self.cookies_from_browser:
+            print(f"Cookies: browser={self.cookies_from_browser}")
+        else:
+            print("Cookies: NOT CONFIGURED (set YTDLP_COOKIES_FROM_BROWSER or YTDLP_COOKIES_FILE)")
+
         if self.proxy:
             print("Proxy: enabled")
  
@@ -360,12 +391,24 @@ class VideoDownloader:
 
 
             if not success:
-                hint = (
-                    " This looks like it may be a datacenter/cloud IP block "
-                    "rather than a config issue — if you're running on "
-                    "Streamlit Cloud or similar, consider routing through "
-                    "a residential proxy (set YTDLP_PROXY or pass proxy=...)."
-                )
+                if "sign in" in error_message.lower() or "not a bot" in error_message.lower():
+                    hint = (
+                        " YouTube is asking for authentication on this IP/session. "
+                        "Set YTDLP_COOKIES_FROM_BROWSER to a browser you're logged "
+                        "into YouTube with (e.g. \"chrome\", \"edge\", \"firefox\") "
+                        "or YTDLP_COOKIES_FILE to a cookies.txt exported from one — "
+                        "player-client spoofing alone is no longer enough to bypass "
+                        "this check. If cookies are already set and this still "
+                        "happens, this may be a datacenter/cloud IP block; consider "
+                        "routing through a residential proxy (set YTDLP_PROXY)."
+                    )
+                else:
+                    hint = (
+                        " This looks like it may be a datacenter/cloud IP block "
+                        "rather than a config issue — if you're running on "
+                        "Streamlit Cloud or similar, consider routing through "
+                        "a residential proxy (set YTDLP_PROXY or pass proxy=...)."
+                    )
                 raise RuntimeError(
                     f"yt-dlp download failed: {error_message} "
                     f"(Fallback error: {last_fallback_err}){hint}"
@@ -453,4 +496,3 @@ class VideoDownloader:
         print("=" * 60)
  
         return filepath
- 
