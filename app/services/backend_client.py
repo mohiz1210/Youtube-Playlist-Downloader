@@ -107,7 +107,8 @@ def get_job_status_api(api_base_url: str, job_id: str):
             return res.json()
     except Exception:
         pass
-    return job_manager.get_job_status(job_id)
+    return job_manager.get_job(job_id)
+
 
 
 def control_job_api(api_base_url: str, job_id: str, action: str):
