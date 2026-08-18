@@ -16,6 +16,7 @@ pydantic-settings==2.10.1
 
 yt-dlp
 aiofiles==24.1.0
+imageio-ffmpeg
 
 # Background processing
 
@@ -36,4 +37,4 @@ streamlit>=1.30.0
 # Testing
 
 pytest==8.4.1
-httpx==0.28.1
+httpx==0.28.1
