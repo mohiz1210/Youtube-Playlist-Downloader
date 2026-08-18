@@ -18,13 +18,13 @@ class VideoDownloader:
 
     def _get_format_spec(self, format_type: str, resolution: str) -> str:
         if format_type == "audio":
-            return "bestaudio/bestaudio*"
+            return "bestaudio/bestaudio*/best"
 
         resolution_map = {
-            "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-            "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]",
-            "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]",
-            "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]",
+            "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+            "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
+            "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
+            "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]/best",
             "worst": "worst",
             "best": "bestvideo+bestaudio/best",
         }
@@ -52,16 +52,24 @@ class VideoDownloader:
             "quiet": True,
             "noplaylist": True,
             "format": format_spec,
+            "nocheckcertificate": True,
+            "geo_bypass": True,
             "js_runtimes": {
                 "node": {}
+            },
+            "http_headers": {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
             },
             "extractor_args": {
                 "youtube": {
                     "player_client": [
-                        "mweb",
                         "android",
-                        "ios",
-                        "web"
+                        "ios"
+                    ],
+                    "player_skip": [
+                        "configs"
                     ]
                 }
             },
@@ -80,22 +88,41 @@ class VideoDownloader:
         if progress_hook:
             options["progress_hooks"] = [progress_hook]
 
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(
-                url,
-                download=True,
-            )
-            if not info:
-                raise RuntimeError("Failed to download video file or format unavailable.")
+        try:
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(
+                    url,
+                    download=True,
+                )
+        except Exception as error:
+            if "403" in str(error) or "Forbidden" in str(error):
+                # Fallback to single stream 'best' to bypass 403 Forbidden on cloud datacenter IPs
+                options["format"] = "best" if format_type == "video" else "bestaudio/best"
+                options["extractor_args"] = {
+                    "youtube": {
+                        "player_client": ["android"]
+                    }
+                }
+                with yt_dlp.YoutubeDL(options) as ydl:
+                    info = ydl.extract_info(
+                        url,
+                        download=True,
+                    )
+            else:
+                raise error
 
-            filepath = ydl.prepare_filename(info)
-            if info.get("_filename") and os.path.exists(info["_filename"]):
-                filepath = info["_filename"]
-            elif info.get("requested_downloads"):
-                for req in info["requested_downloads"]:
-                    if req.get("filepath") and os.path.exists(req["filepath"]):
-                        filepath = req["filepath"]
-                        break
+        if not info:
+            raise RuntimeError("Failed to download video file or format unavailable.")
+
+        filepath = ydl.prepare_filename(info)
+        if info.get("_filename") and os.path.exists(info["_filename"]):
+            filepath = info["_filename"]
+        elif info.get("requested_downloads"):
+            for req in info["requested_downloads"]:
+                if req.get("filepath") and os.path.exists(req["filepath"]):
+                    filepath = req["filepath"]
+                    break
+
 
             base_path, _ = os.path.splitext(filepath)
 
