@@ -88,11 +88,19 @@ class VideoDownloader:
                 raise RuntimeError("Failed to download video file or format unavailable.")
 
             filepath = ydl.prepare_filename(info)
+            if info.get("_filename") and os.path.exists(info["_filename"]):
+                filepath = info["_filename"]
+            elif info.get("requested_downloads"):
+                for req in info["requested_downloads"]:
+                    if req.get("filepath") and os.path.exists(req["filepath"]):
+                        filepath = req["filepath"]
+                        break
+
+            base_path, _ = os.path.splitext(filepath)
+
             if format_type == "audio":
-                base_path, _ = os.path.splitext(filepath)
                 final_audio_path = f"{base_path}.{audio_format}"
 
-                # Clean up original video file if separate from final audio file
                 if os.path.exists(filepath) and filepath != final_audio_path:
                     try:
                         os.remove(filepath)
@@ -110,4 +118,12 @@ class VideoDownloader:
                 if os.path.exists(final_audio_path):
                     filepath = final_audio_path
 
-            return filepath
+            # Fallback file lookup if prepare_filename differed from merged file
+            if not os.path.exists(filepath):
+                for ext in [".mp4", ".mkv", ".webm", ".mp3", ".m4a", ".wav", ".flac", ".3gp"]:
+                    candidate = f"{base_path}{ext}"
+                    if os.path.exists(candidate):
+                        filepath = candidate
+                        break
+
+            return filepath

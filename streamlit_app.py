@@ -333,17 +333,28 @@ with tab2:
                 )
                 if success:
                     filepath = data.get("filepath", "")
+                    target_path = None
                     if filepath and os.path.exists(filepath):
-                        with open(filepath, "rb") as f:
+                        target_path = filepath
+                    elif filepath:
+                        # Try relative to DOWNLOAD_DIRECTORY
+                        from app.utils.filehandler import DOWNLOAD_DIRECTORY
+                        cand = DOWNLOAD_DIRECTORY / Path(filepath).name
+                        if cand.exists():
+                            target_path = str(cand)
+
+                    if target_path and os.path.exists(target_path):
+                        with open(target_path, "rb") as f:
                             st.session_state["single_video_ready"] = {
                                 "bytes": f.read(),
-                                "filename": Path(filepath).name,
+                                "filename": Path(target_path).name,
                             }
                         st.rerun()
                     else:
-                        st.error("Downloaded file not found on disk.")
+                        st.error(f"Downloaded file path error: {filepath}")
                 else:
                     st.error(f"Download failed: {error_msg}")
+
 
     if "single_video_ready" in st.session_state:
         file_info = st.session_state["single_video_ready"]
