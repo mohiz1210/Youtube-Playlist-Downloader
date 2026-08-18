@@ -29,7 +29,7 @@ except Exception:
     IMPERSONATE_TARGET = None
 
 from app.utils.filehandler import create_download_directory
-from app.utils.cookies import resolve_cookiefile, materialize_cookies_txt
+from app.utils.cookies import materialize_cookies_txt, delete_cookiefile
 
 
 class VideoDownloader:
@@ -37,52 +37,26 @@ class VideoDownloader:
     def __init__(
         self,
         subfolder: str | None = None,
-        cookiefile: str | None = None,
-        cookies_from_browser: str | None = None,
         cookies_txt: str | None = None,
         proxy: str | None = None,
     ):
         self.download_dir = create_download_directory(subfolder)
-        # Cookies are the real fix for YouTube's "Sign in to confirm
-        # you're not a bot" error — the player-client spoofing below is
-        # only a fallback and YouTube increasingly blocks it outright.
-        # Priority:
-        #   1. cookies_txt — cookies.txt CONTENT supplied for this one
-        #      request/visitor (e.g. pasted into the UI). Takes priority
-        #      over everything else so one visitor's own cookies are used
-        #      for their own request instead of the server operator's.
-        #   2. cookiefile / resolve_cookiefile() — an explicit path, or the
-        #      server operator's own cookies.txt (YTDLP_COOKIES_FILE, or its
-        #      content via YTDLP_COOKIES_TXT for hosted deploys like
-        #      Streamlit Cloud) — shared by every visitor who didn't supply
-        #      their own.
-        #   3. cookies_from_browser (YTDLP_COOKIES_FROM_BROWSER) — only
-        #      works when this code runs on the same machine as a real,
-        #      logged-in browser, i.e. locally, never on a cloud/server
-        #      deploy.
-        self.cookiefile = (
-            materialize_cookies_txt(cookies_txt)
-            or cookiefile
-            or resolve_cookiefile()
-        )
-        self.cookies_from_browser = cookies_from_browser or os.environ.get(
-            "YTDLP_COOKIES_FROM_BROWSER"
-        )
-        # Optional proxy, e.g. "http://user:pass@host:port".
-        # Can also be supplied via env var so you don't have to
-        # hardcode credentials anywhere.
+        # Two options only, nothing else:
+        #   A. No cookies — try the download as a normal anonymous
+        #      request. Works for public videos/playlists most of the
+        #      time; YouTube may still demand sign-in on some IPs.
+        #   B. cookies_txt — cookies.txt CONTENT this ONE visitor supplied
+        #      for THIS ONE request (uploaded/pasted in the UI). Never a
+        #      server-wide/shared credential — materialized to a private
+        #      temp file scoped to this instance and deleted by
+        #      download() the moment the job finishes, win or lose.
+        self.cookiefile = materialize_cookies_txt(cookies_txt)
+        # Optional proxy, e.g. "http://user:pass@host:port". Not a
+        # cookie/account mechanism — just network routing — so it applies
+        # equally under both options above. Can be supplied via env var so
+        # you don't have to hardcode credentials anywhere.
         self.proxy = proxy or os.environ.get("YTDLP_PROXY")
 
-    # ---------------------------------------------------------
-    # COOKIE OPTIONS HELPER
-    # ---------------------------------------------------------
-
-    def _cookiesfrombrowser_tuple(self):
-        """Parse YTDLP_COOKIES_FROM_BROWSER ("chrome" or "chrome:Profile 1")
-        into the (browser, profile, keyring, container) tuple yt-dlp expects."""
-        browser, _, profile = self.cookies_from_browser.partition(":")
-        return (browser.strip(), profile.strip() or None, None, None)
- 
     # ---------------------------------------------------------
     # FORMAT SELECTION
     # ---------------------------------------------------------
@@ -168,8 +142,6 @@ class VideoDownloader:
 
         if self.cookiefile and os.path.exists(self.cookiefile):
             options["cookiefile"] = self.cookiefile
-        elif self.cookies_from_browser:
-            options["cookiesfrombrowser"] = self._cookiesfrombrowser_tuple()
 
         if self.proxy:
             options["proxy"] = self.proxy
@@ -252,8 +224,6 @@ class VideoDownloader:
             opts["impersonate"] = IMPERSONATE_TARGET
         if self.cookiefile and os.path.exists(self.cookiefile):
             opts["cookiefile"] = self.cookiefile
-        elif self.cookies_from_browser:
-            opts["cookiesfrombrowser"] = self._cookiesfrombrowser_tuple()
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -306,20 +276,43 @@ class VideoDownloader:
         resolution: str = "best",
         audio_format: str = "mp3",
     ):
- 
+
         if not url:
             raise ValueError("Video URL cannot be empty.")
- 
+
+        try:
+            return self._download(
+                url,
+                progress_hook=progress_hook,
+                format_type=format_type,
+                resolution=resolution,
+                audio_format=audio_format,
+            )
+        finally:
+            # Option B's cookies.txt is only ever meant to live for this
+            # one job — delete it now whether the download succeeded or
+            # failed, so it never lingers on disk past this request.
+            delete_cookiefile(self.cookiefile)
+
+    def _download(
+        self,
+        url: str,
+        progress_hook=None,
+        format_type: str = "video",
+        resolution: str = "best",
+        audio_format: str = "mp3",
+    ):
+
         output_template = os.path.join(
             str(self.download_dir),
             "%(title)s.%(ext)s",
         )
- 
+
         format_spec = self._get_format_spec(
             format_type,
             resolution,
         )
- 
+
         options = self._build_options(
             output_template=output_template,
             format_spec=format_spec,
@@ -327,7 +320,7 @@ class VideoDownloader:
             audio_format=audio_format,
             progress_hook=progress_hook,
         )
- 
+
         print("=" * 60)
         print("YT-DLP DOWNLOAD")
         print("=" * 60)
@@ -335,21 +328,16 @@ class VideoDownloader:
         print(f"Format: {format_spec}")
         print(f"Resolution: {resolution}")
         print(f"Directory: {self.download_dir}")
- 
+
         if FFMPEG_EXE:
             print(f"FFmpeg: {FFMPEG_EXE}")
         else:
             print("FFmpeg: NOT FOUND")
- 
+
         if self.cookiefile:
-            print(f"Cookies: file={self.cookiefile}")
-        elif self.cookies_from_browser:
-            print(f"Cookies: browser={self.cookies_from_browser}")
+            print("Cookies: visitor-supplied (Option B)")
         else:
-            print(
-                "Cookies: NOT CONFIGURED (set YTDLP_COOKIES_TXT/YTDLP_COOKIES_FILE "
-                "for hosted deploys, or YTDLP_COOKIES_FROM_BROWSER for local runs)"
-            )
+            print("Cookies: none (Option A — anonymous request)")
 
         if self.proxy:
             print("Proxy: enabled")
@@ -363,10 +351,10 @@ class VideoDownloader:
             )
 
         print("=" * 60)
- 
+
         info = None
         expected_path = None
- 
+
         try:
             with yt_dlp.YoutubeDL(options) as ydl:
                 info = ydl.extract_info(
@@ -375,17 +363,17 @@ class VideoDownloader:
                 )
                 if not info:
                     raise RuntimeError("yt-dlp returned no video information.")
- 
+
                 expected_path = ydl.prepare_filename(info)
- 
+
         except Exception as error:
             error_message = str(error)
- 
+
             print("=" * 60)
             print("YT-DLP PRIMARY DOWNLOAD ERROR")
             print(error_message)
             print("=" * 60)
- 
+
             # Fallback client recovery sequence.
             # Ordered by which clients currently tend to avoid
             # PO-token / 403 issues most often — this changes as
@@ -396,10 +384,10 @@ class VideoDownloader:
                 if format_type == "video"
                 else ["bestaudio/best/worst"]
             )
- 
+
             success = False
             last_fallback_err = None
- 
+
             for client in fallback_clients:
                 for fmt in fallback_formats:
                     print(
@@ -452,33 +440,36 @@ class VideoDownloader:
                     "sign in" in combined_message
                     or "not a bot" in combined_message
                 )
-                if is_bot_check and not self.cookiefile and not self.cookies_from_browser:
+                if is_bot_check and not self.cookiefile:
+                    # Option A (no cookies) hit YouTube's sign-in check —
+                    # point the user at Option B instead of anything
+                    # server-side, since there is no server-side fallback.
                     hint = (
-                        " YouTube is asking for authentication on this IP/session — "
-                        "player-client spoofing alone is no longer enough to bypass "
-                        "this check, and no cookies are configured for this request. "
-                        "Running locally: set YTDLP_COOKIES_FROM_BROWSER to a browser "
-                        "you're logged into YouTube with on THIS machine (e.g. "
-                        "\"chrome\", \"edge\", \"firefox\"). Running on a hosted deploy "
-                        "(Streamlit Cloud, Docker, etc. — no real browser exists "
-                        "there, so YTDLP_COOKIES_FROM_BROWSER cannot work): export "
-                        "cookies.txt from your own browser and set YTDLP_COOKIES_TXT "
-                        "to its contents in the app's Secrets (or YTDLP_COOKIES_FILE "
-                        "to its path), or paste it into the app's own \"YouTube "
-                        "Cookies\" sidebar field instead."
+                        " This video/playlist requires signing in to "
+                        "YouTube to confirm you're not a bot — a plain, "
+                        "cookie-less request isn't enough here. Export "
+                        "cookies.txt from a browser you're logged into "
+                        "YouTube with (e.g. the \"Get cookies.txt LOCALLY\" "
+                        "extension) and upload or paste it in the app's "
+                        "\"YouTube Cookies\" section, then try again. Your "
+                        "cookies are used only for this one download and "
+                        "deleted right after — never stored or shared."
                     )
                 elif is_bot_check:
+                    # Option B (their own cookies) was used and it STILL
+                    # hit the check — almost always a stale/invalid export.
                     hint = (
-                        " YouTube is asking for authentication on this IP/session "
-                        "even though cookies are configured — they're likely expired "
-                        "or invalid (YouTube cookies typically stop working after a "
-                        "while, especially the __Secure-3PSID/HSID family). Re-export "
-                        "a fresh cookies.txt from a browser that is currently logged "
-                        "into youtube.com and update YTDLP_COOKIES_TXT (or the "
-                        "pasted cookies). If a fresh export still fails immediately, "
-                        "this is likely a datacenter/cloud IP block that cookies "
-                        "alone can't get around; consider routing through a "
-                        "residential proxy (set YTDLP_PROXY)."
+                        " YouTube is still asking for authentication even "
+                        "though cookies.txt was provided — they're likely "
+                        "expired or invalid (YouTube session cookies stop "
+                        "working after a while, especially the "
+                        "__Secure-3PSID/HSID family). Log into "
+                        "youtube.com again in your browser, re-export a "
+                        "fresh cookies.txt, and upload it again. If a "
+                        "fresh export still fails immediately, this may "
+                        "be a datacenter/cloud IP block that cookies "
+                        "alone can't get around; consider routing through "
+                        "a residential proxy (set YTDLP_PROXY)."
                     )
                 else:
                     hint = (
@@ -499,69 +490,69 @@ class VideoDownloader:
             info,
             expected_path,
         )
- 
+
         if not filepath:
- 
+
             raise RuntimeError(
                 "yt-dlp reported success, but the downloaded "
                 "file could not be located."
             )
- 
+
         # -----------------------------------------------------
         # Audio
         # -----------------------------------------------------
- 
+
         if format_type == "audio":
- 
+
             base_path, _ = os.path.splitext(
                 filepath
             )
- 
+
             final_audio_path = (
                 f"{base_path}.{audio_format}"
             )
- 
+
             if os.path.exists(final_audio_path):
- 
+
                 if (
                     filepath != final_audio_path
                     and os.path.exists(filepath)
                 ):
- 
+
                     try:
                         os.remove(filepath)
                     except Exception:
                         pass
- 
+
                 filepath = final_audio_path
- 
+
         # -----------------------------------------------------
         # Final validation
         # -----------------------------------------------------
- 
+
         if not os.path.exists(filepath):
- 
+
             raise RuntimeError(
                 "Download failed because the output "
                 "file does not exist."
             )
- 
+
         try:
- 
+
             size = os.path.getsize(filepath)
- 
+
             if size <= 0:
- 
+
                 raise RuntimeError(
                     "Downloaded file is empty."
                 )
- 
+
         except OSError as error:
- 
+
             raise RuntimeError(
                 f"Could not inspect downloaded file: {error}"
             ) from error
- 
+
         print("=" * 60)
         print("DOWNLOAD SUCCESS")
         try:
@@ -572,6 +563,5 @@ class VideoDownloader:
             f"Size: {size / (1024 * 1024):.2f} MB"
         )
         print("=" * 60)
- 
+
         return filepath
- 

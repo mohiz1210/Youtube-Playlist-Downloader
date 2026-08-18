@@ -4,7 +4,6 @@ from app.jobs.manager import job_manager
 from app.services.downloader import VideoDownloader
 from app.services.playlist_downloader import PlaylistDownloader
 from app.services.playlist_service import PlaylistService
-from app.utils.quota import check_and_consume, QuotaExceededError
 
 playlist_service = PlaylistService()
 playlist_downloader = PlaylistDownloader()
@@ -38,7 +37,6 @@ def start_playlist_download_api(
     audio_format: str,
     selected_video_ids: list[str] | None = None,
     cookies_txt: str | None = None,
-    visitor_id: str | None = None,
 ):
     """Start playlist download via FastAPI HTTP or direct Python background thread fallback."""
     payload = {
@@ -60,16 +58,6 @@ def start_playlist_download_api(
         detail = res.json().get("detail", res.text) if res.content else f"HTTP {res.status_code}"
         return False, None, detail
     except Exception:
-        # No FastAPI server reachable (e.g. Streamlit Cloud running as a
-        # single process) — the HTTP route above never ran its own quota
-        # check, so enforce it here. One playlist job = one unit of quota
-        # regardless of video count, and only when NOT using the visitor's
-        # own cookies.
-        has_own_cookies = bool(cookies_txt and cookies_txt.strip())
-        try:
-            check_and_consume(visitor_id, has_own_cookies)
-        except QuotaExceededError as error:
-            return False, None, str(error)
         try:
             playlist = playlist_service.get_playlist(url, cookies_txt=cookies_txt)
             videos_to_download = playlist["videos"]
@@ -150,7 +138,6 @@ def download_single_video_api(
     resolution: str,
     audio_format: str,
     cookies_txt: str | None = None,
-    visitor_id: str | None = None,
 ):
     """Download single video via HTTP or direct Python execution fallback."""
     payload = {
@@ -166,13 +153,6 @@ def download_single_video_api(
             return True, res.json(), None
         return False, None, res.text
     except Exception:
-        # No FastAPI server reachable — enforce the shared-cookie quota
-        # here (see start_playlist_download_api for the same reasoning).
-        has_own_cookies = bool(cookies_txt and cookies_txt.strip())
-        try:
-            check_and_consume(visitor_id, has_own_cookies)
-        except QuotaExceededError as error:
-            return False, None, str(error)
         try:
             # Built per-call (not module-level/shared) so each visitor's own
             # cookies_txt is scoped to just their request.

@@ -1,9 +1,7 @@
-import os
-
 import yt_dlp
 
 from app.core.exceptions import PlaylistError
-from app.utils.cookies import resolve_cookiefile, materialize_cookies_txt
+from app.utils.cookies import materialize_cookies_txt, delete_cookiefile
 
 # Browser TLS/HTTP2 impersonation (yt-dlp's --impersonate) — see
 # app/services/downloader.py for the full rationale. Same optional
@@ -19,34 +17,13 @@ except Exception:
 
 class PlaylistExtractor:
 
-    def _cookie_options(self, cookies_txt: str | None = None) -> dict:
-        """Same cookie resolution used by VideoDownloader, so playlist
-        extraction doesn't hit YouTube's "Sign in to confirm you're not a
-        bot" check either.
-
-        Priority: a visitor-supplied cookies_txt (this call) > the server
-        operator's own cookies.txt (YTDLP_COOKIES_FILE / YTDLP_COOKIES_TXT)
-        > YTDLP_COOKIES_FROM_BROWSER (local runs only — never works on a
-        hosted deploy, since there's no real browser there)."""
-        cookiefile = materialize_cookies_txt(cookies_txt) or resolve_cookiefile()
-        if cookiefile:
-            return {"cookiefile": cookiefile}
-
-        cookies_from_browser = os.environ.get("YTDLP_COOKIES_FROM_BROWSER")
-        if cookies_from_browser:
-            browser, _, profile = cookies_from_browser.partition(":")
-            return {
-                "cookiesfrombrowser": (
-                    browser.strip(),
-                    profile.strip() or None,
-                    None,
-                    None,
-                )
-            }
-
-        return {}
-
     def extract(self, url: str, cookies_txt: str | None = None):
+        # Two options only — see VideoDownloader for the full rationale:
+        #   A. No cookies_txt supplied — plain anonymous extraction.
+        #   B. cookies_txt — THIS visitor's own cookies.txt content, used
+        #      only for this one extraction and deleted right after,
+        #      never persisted or shared with anyone else.
+        cookiefile = materialize_cookies_txt(cookies_txt)
 
         options = {
             "quiet": True,
@@ -57,7 +34,7 @@ class PlaylistExtractor:
                 }
             },
             **({"impersonate": IMPERSONATE_TARGET} if IMPERSONATE_TARGET else {}),
-            **self._cookie_options(cookies_txt),
+            **({"cookiefile": cookiefile} if cookiefile else {}),
         }
 
         try:
@@ -73,3 +50,6 @@ class PlaylistExtractor:
 
         except Exception as error:
             raise PlaylistError(str(error))
+
+        finally:
+            delete_cookiefile(cookiefile)
