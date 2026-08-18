@@ -44,17 +44,29 @@ class VideoDownloader:
  
         # Video
         resolution_map = {
-            "1080p": "bestvideo*[height<=1080]+bestaudio/best[height<=1080]/b/best/worst",
-            "720p": "bestvideo*[height<=720]+bestaudio/best[height<=720]/b/best/worst",
-            "480p": "bestvideo*[height<=480]+bestaudio/best[height<=480]/b/best/worst",
-            "360p": "bestvideo*[height<=360]+bestaudio/best[height<=360]/b/best/worst",
-            "best": "bestvideo*+bestaudio/b/best/worst",
-            "worst": "worstvideo*+worstaudio/worst/b/best",
+            "1080p": (
+                "bestvideo*[height<=1080]+bestaudio/"
+                "b[height<=1080]/b/best/worst"
+            ),
+            "720p": (
+                "bestvideo*[height<=720]+bestaudio/"
+                "b[height<=720]/b/best/worst"
+            ),
+            "480p": (
+                "bestvideo*[height<=480]+bestaudio/"
+                "b[height<=480]/b/best/worst"
+            ),
+            "360p": (
+                "bestvideo*[height<=360]+bestaudio/"
+                "b[height<=360]/b/best/worst"
+            ),
+            "best": "b/best/bestvideo*+bestaudio/worst",
+            "worst": "worst",
         }
  
         return resolution_map.get(
             resolution,
-            "bestvideo*+bestaudio/b/best/worst",
+            "b/best/bestvideo*+bestaudio/worst",
         )
  
     # ---------------------------------------------------------
@@ -244,35 +256,47 @@ class VideoDownloader:
             # Ordered by which clients currently tend to avoid
             # PO-token / 403 issues most often — this changes as
             # YouTube adjusts its anti-bot rules, so revisit periodically.
-            fallback_clients = ["android", "android_vr", "mweb", "ios"]
-
-            fallback_format = "b/best/worst" if format_type == "video" else "bestaudio/best/worst"
+            fallback_clients = ["android", "android_vr", "mweb", "ios", "tv_embedded"]
+            fallback_formats = (
+                ["b/best/worst", "18/22/b/best"]
+                if format_type == "video"
+                else ["bestaudio/best/worst"]
+            )
  
             success = False
             last_fallback_err = None
  
             for client in fallback_clients:
-                print(f"Attempting recovery with player_client={client}...")
-                fallback_options = dict(options)
-                fallback_options["format"] = fallback_format
-                fallback_options["extractor_args"] = {
-                    "youtube": {
-                        "player_client": [client],
-                        "player_skip": ["webpage", "configs"],
+                for fmt in fallback_formats:
+                    print(
+                        f"Attempting recovery with player_client={client}, format={fmt}..."
+                    )
+                    fallback_options = dict(options)
+                    fallback_options["format"] = fmt
+                    fallback_options["extractor_args"] = {
+                        "youtube": {
+                            "player_client": [client],
+                            "player_skip": ["webpage", "configs"],
+                        }
                     }
-                }
-                try:
-                    with yt_dlp.YoutubeDL(fallback_options) as ydl:
-                        info = ydl.extract_info(url, download=True)
-                        if info:
-                            expected_path = ydl.prepare_filename(info)
-                            success = True
-                            print(f"Recovery succeeded with player_client={client}")
-                            break
-                except Exception as fb_err:
-                    last_fallback_err = fb_err
-                    print(f"Recovery with player_client={client} failed: {fb_err}")
-                    continue
+                    try:
+                        with yt_dlp.YoutubeDL(fallback_options) as ydl:
+                            info = ydl.extract_info(url, download=True)
+                            if info:
+                                expected_path = ydl.prepare_filename(info)
+                                success = True
+                                print(
+                                    f"Recovery succeeded with player_client={client}, format={fmt}"
+                                )
+                                break
+                    except Exception as fb_err:
+                        last_fallback_err = fb_err
+                        print(
+                            f"Recovery with player_client={client}, format={fmt} failed: {fb_err}"
+                        )
+                        continue
+                if success:
+                    break
  
             if not success:
                 hint = (
