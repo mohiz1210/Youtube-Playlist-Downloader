@@ -20,6 +20,7 @@ class JobManager:
         total_videos: int,
         videos: list[dict],
         playlist_title: str = "Playlist",
+        cookies_txt: str | None = None,
     ):
 
         job_id = str(uuid.uuid4())
@@ -68,6 +69,11 @@ class JobManager:
             "videos": video_progress,
 
             "created_at": datetime.utcnow(),
+
+            # Kept only for internal reuse (e.g. by the retry endpoint) —
+            # not part of JobStatusResponse, so it's never returned to
+            # clients via the status API.
+            "cookies_txt": cookies_txt,
         }
 
 

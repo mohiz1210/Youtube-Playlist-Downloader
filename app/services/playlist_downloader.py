@@ -146,6 +146,7 @@ class PlaylistDownloader:
         resolution: str = "best",
         audio_format: str = "mp3",
         playlist_title: str | None = None,
+        cookies_txt: str | None = None,
     ):
         video_id = video.get("id")
         video_url = video.get("url")
@@ -178,7 +179,10 @@ class PlaylistDownloader:
                 job_info = job_manager.get_job(job_id)
                 playlist_title = job_info.get("playlist_title") if job_info else f"job_{job_id}"
 
-            downloader = VideoDownloader(subfolder=playlist_title)
+            downloader = VideoDownloader(
+                subfolder=playlist_title,
+                cookies_txt=cookies_txt,
+            )
 
             filepath = downloader.download(
                 video_url,
@@ -290,6 +294,7 @@ class PlaylistDownloader:
         resolution: str = "best",
         audio_format: str = "mp3",
         playlist_title: str | None = None,
+        cookies_txt: str | None = None,
     ):
 
         job_manager.update_job(
@@ -322,6 +327,7 @@ class PlaylistDownloader:
                     resolution=resolution,
                     audio_format=audio_format,
                     playlist_title=playlist_title,
+                    cookies_txt=cookies_txt,
                 )
 
                 futures.append(

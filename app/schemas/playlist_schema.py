@@ -8,6 +8,7 @@ class PlaylistRequest(BaseModel):
     resolution: str = "best"    # "best", "1080p", "720p", "480p", "360p", "worst"
     audio_format: str = "mp3"   # "mp3", "m4a", "wav", "flac"
     selected_video_ids: list[str] | None = None
+    cookies_txt: str | None = None  # visitor's own cookies.txt content, optional
 
 
 

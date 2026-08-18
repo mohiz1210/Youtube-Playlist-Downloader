@@ -142,6 +142,49 @@ else:
     )
 
 
+# ---------------------------------------------------------
+# YOUTUBE COOKIES (optional, per-visitor)
+# ---------------------------------------------------------
+# YouTube often requires proof of a real, logged-in session before it will
+# allow a download ("Sign in to confirm you're not a bot"). If you don't
+# supply your own cookies here, your download rides on the app owner's
+# shared cookies (if they've configured any) — fine for occasional use, but
+# under heavier traffic that shared account can get rate-limited or
+# temporarily locked out by YouTube. Supplying your own keeps your
+# downloads working independently of that.
+st.sidebar.markdown("---")
+with st.sidebar.expander("🍪 YouTube Cookies (optional)"):
+    st.caption(
+        "Fixes \"Sign in to confirm you're not a bot\" and makes your "
+        "downloads use your own YouTube session instead of sharing the "
+        "app owner's. Export cookies.txt from your browser while logged "
+        "into youtube.com (e.g. the \"Get cookies.txt LOCALLY\" extension), "
+        "then upload or paste it below."
+    )
+    cookies_file_upload = st.file_uploader(
+        "Upload cookies.txt",
+        type=["txt"],
+        key="cookies_upload",
+    )
+    cookies_text_input = st.text_area(
+        "...or paste its contents",
+        height=100,
+        key="cookies_paste",
+        placeholder="# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\t...",
+    )
+    st.caption(
+        "Sent only with your own download requests, never stored on the "
+        "server or shared with other visitors."
+    )
+
+cookies_txt = None
+if cookies_file_upload is not None:
+    cookies_txt = cookies_file_upload.getvalue().decode("utf-8", errors="ignore")
+elif cookies_text_input.strip():
+    cookies_txt = cookies_text_input.strip()
+
+if cookies_txt:
+    st.sidebar.success("✅ Using your own YouTube cookies")
 
 
 # Navigation Tabs
@@ -170,7 +213,7 @@ with tab1:
 
     if extract_btn and playlist_url:
         with st.spinner("Extracting playlist information..."):
-            success, data, error_msg = extract_playlist_api(API_BASE_URL, playlist_url)
+            success, data, error_msg = extract_playlist_api(API_BASE_URL, playlist_url, cookies_txt=cookies_txt)
             if success:
                 st.session_state["playlist_info"] = data
                 if "active_job_id" in st.session_state:
@@ -303,6 +346,7 @@ with tab1:
                     resolution,
                     audio_format,
                     selected_ids if selected_ids else None,
+                    cookies_txt=cookies_txt,
                 )
                 if success:
                     st.session_state["active_job_id"] = job_data["job_id"]
@@ -330,6 +374,7 @@ with tab2:
                     format_type,
                     resolution,
                     audio_format,
+                    cookies_txt=cookies_txt,
                 )
                 if success:
                     filepath = data.get("filepath", "")

@@ -48,7 +48,8 @@ async def extract_playlist(
     try:
 
         return playlist_service.get_playlist(
-            payload.url
+            payload.url,
+            cookies_txt=payload.cookies_txt,
         )
 
     except PlaylistError as error:
@@ -84,7 +85,8 @@ async def download_playlist(
 
         # Extract playlist information
         playlist = playlist_service.get_playlist(
-            payload.url
+            payload.url,
+            cookies_txt=payload.cookies_txt,
         )
 
         videos_to_download = playlist["videos"]
@@ -108,6 +110,7 @@ async def download_playlist(
             total_videos=total_videos,
             videos=videos_to_download,
             playlist_title=playlist["title"],
+            cookies_txt=payload.cookies_txt,
         )
 
         # Start playlist download in background
@@ -119,6 +122,7 @@ async def download_playlist(
             resolution=payload.resolution,
             audio_format=payload.audio_format,
             playlist_title=playlist["title"],
+            cookies_txt=payload.cookies_txt,
         )
 
 
@@ -210,8 +214,8 @@ async def retry_failed_job(
     background_tasks: BackgroundTasks,
 ):
     failed_videos = job_manager.reset_failed_videos(job_id)
+    job = job_manager.get_job(job_id)
     if not failed_videos:
-        job = job_manager.get_job(job_id)
         if not job:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -223,6 +227,7 @@ async def retry_failed_job(
         playlist_downloader.download_playlist,
         job_id,
         failed_videos,
+        cookies_txt=job.get("cookies_txt") if job else None,
     )
     return {
         "status": "success",

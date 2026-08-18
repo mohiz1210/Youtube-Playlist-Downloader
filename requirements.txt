@@ -14,7 +14,11 @@ pydantic-settings==2.10.1
 
 # Downloading
 
-yt-dlp
+# curl-cffi extra enables yt-dlp's browser TLS/HTTP2 impersonation
+# (--impersonate) so requests look like real Chrome instead of a bare
+# Python client — reduces bot-detection false positives without needing
+# any cookies or account.
+yt-dlp[default,curl-cffi]
 aiofiles==24.1.0
 imageio-ffmpeg
 

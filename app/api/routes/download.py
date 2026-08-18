@@ -6,8 +6,6 @@ from app.services.downloader import VideoDownloader
 
 router = APIRouter()
 
-downloader = VideoDownloader()
-
 
 @router.post("/download/video")
 async def download_video(
@@ -15,6 +13,12 @@ async def download_video(
 ):
 
     try:
+
+        # Built per-request (not module-level/shared) so each visitor's own
+        # cookies_txt is scoped to just their request — a shared instance
+        # would risk one visitor's cookies leaking into another's
+        # concurrent download.
+        downloader = VideoDownloader(cookies_txt=payload.cookies_txt)
 
         file_path = downloader.download(
             payload.url,

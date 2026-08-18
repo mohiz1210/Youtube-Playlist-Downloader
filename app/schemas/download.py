@@ -10,6 +10,7 @@ class DownloadRequest(BaseModel):
     format_type: str = "video"  # "video" or "audio"
     resolution: str = "best"    # "best", "1080p", "720p", "480p", "360p", "worst"
     audio_format: str = "mp3"   # "mp3", "m4a", "wav", "flac"
+    cookies_txt: str | None = None  # visitor's own cookies.txt content, optional
 
 
 
