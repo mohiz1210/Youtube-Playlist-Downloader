@@ -39,22 +39,18 @@ class VideoDownloader:
 
         # Video
         resolution_map = {
-            "1080p": "bestvideo*[height<=1080]+bestaudio/best",
-            "720p": "bestvideo*[height<=720]+bestaudio/best",
-            "480p": "bestvideo*[height<=480]+bestaudio/best",
-            "360p": "bestvideo*[height<=360]+bestaudio/best",
+            "1080p": "bestvideo*[height<=1080]+bestaudio/best[height<=1080]/b/best/worst",
 
-            # Let yt-dlp choose a reasonable format
-            "best": "bestvideo*+bestaudio/best",
-
-            # Avoid "worst" because it is often not what users
-            # actually want and can produce poor results.
-            "worst": "worstvideo*+worstaudio/worst",
+            "720p": "bestvideo*[height<=720]+bestaudio/best[height<=720]/b/best/worst",
+            "480p": "bestvideo*[height<=480]+bestaudio/best[height<=480]/b/best/worst",
+            "360p": "bestvideo*[height<=360]+bestaudio/best[height<=360]/b/best/worst",
+            "best": "bestvideo*+bestaudio/b/best/worst",
+            "worst": "worstvideo*+worstaudio/worst/b/best",
         }
 
         return resolution_map.get(
             resolution,
-            "bestvideo*+bestaudio/best",
+            "bestvideo*+bestaudio/b/best/worst",
         )
 
     # ---------------------------------------------------------
@@ -72,57 +68,33 @@ class VideoDownloader:
 
         options = {
             "outtmpl": output_template,
-
-            # Keep logs visible while diagnosing deployment.
-            "quiet": False,
-            "no_warnings": False,
-
+            "quiet": True,
+            "no_warnings": True,
             "noplaylist": True,
-
             "format": format_spec,
-
-            # Needed when separate video/audio streams
-            # need to be merged.
             "merge_output_format": "mp4",
-
-            # Continue partial downloads.
             "continuedl": True,
-
-            # Force IPv4 as an additional diagnostic.
             "force_ipv4": True,
-
-            # Retry network failures.
             "retries": 3,
             "fragment_retries": 3,
-
-            # Do NOT force Android, iOS, mweb, TV, etc.
-            #
-            # yt-dlp should choose its current supported
-            # configuration.
+            "nocheckcertificate": True,
+            "geo_bypass": True,
+            "check_formats": None,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android", "android_vr", "mweb"],
+                    "player_skip": ["webpage", "configs"],
+                }
+            },
         }
-
-        # -----------------------------------------------------
-        # FFmpeg
-        # -----------------------------------------------------
 
         if FFMPEG_EXE:
             options["ffmpeg_location"] = FFMPEG_EXE
 
-        # -----------------------------------------------------
-        # Cookies
-        # -----------------------------------------------------
-
-        if self.cookiefile:
-
-            if os.path.exists(self.cookiefile):
-                options["cookiefile"] = self.cookiefile
-
-        # -----------------------------------------------------
-        # Audio conversion
-        # -----------------------------------------------------
+        if self.cookiefile and os.path.exists(self.cookiefile):
+            options["cookiefile"] = self.cookiefile
 
         if format_type == "audio":
-
             options["postprocessors"] = [
                 {
                     "key": "FFmpegExtractAudio",
@@ -131,14 +103,8 @@ class VideoDownloader:
                 }
             ]
 
-        # -----------------------------------------------------
-        # Progress hook
-        # -----------------------------------------------------
-
         if progress_hook:
-            options["progress_hooks"] = [
-                progress_hook
-            ]
+            options["progress_hooks"] = [progress_hook]
 
         return options
 
@@ -152,69 +118,26 @@ class VideoDownloader:
         expected_path: str | None,
     ) -> str | None:
 
-        # -----------------------------------------------------
-        # 1. Expected path
-        # -----------------------------------------------------
-
-        if expected_path:
-
-            if os.path.exists(expected_path):
-                return expected_path
-
-        # -----------------------------------------------------
-        # 2. requested_downloads
-        # -----------------------------------------------------
+        if expected_path and os.path.exists(expected_path):
+            return expected_path
 
         if info:
-
-            for item in info.get(
-                "requested_downloads",
-                [],
-            ):
-
+            for item in info.get("requested_downloads", []):
                 filepath = item.get("filepath")
-
                 if filepath and os.path.exists(filepath):
                     return filepath
 
-        # -----------------------------------------------------
-        # 3. Check common extensions
-        # -----------------------------------------------------
-
         if expected_path:
-
-            base_path, _ = os.path.splitext(
-                expected_path
-            )
-
+            base_path, _ = os.path.splitext(expected_path)
             extensions = [
-                ".mp4",
-                ".mkv",
-                ".webm",
-                ".mp3",
-                ".m4a",
-                ".wav",
-                ".flac",
-                ".aac",
-                ".3gp",
-                ".mov",
+                ".mp4", ".mkv", ".webm", ".mp3", ".m4a", ".wav", ".flac", ".aac", ".3gp", ".mov"
             ]
-
             for extension in extensions:
-
-                candidate = (
-                    f"{base_path}{extension}"
-                )
-
+                candidate = f"{base_path}{extension}"
                 if os.path.exists(candidate):
                     return candidate
 
-        # -----------------------------------------------------
-        # 4. Search download directory
-        # -----------------------------------------------------
-
         try:
-
             files = [
                 file
                 for file in self.download_dir.glob("*")
@@ -224,16 +147,9 @@ class VideoDownloader:
                     and not file.name.endswith(".ytdl")
                 )
             ]
-
             if files:
-
-                latest = max(
-                    files,
-                    key=lambda file: file.stat().st_mtime,
-                )
-
+                latest = max(files, key=lambda file: file.stat().st_mtime)
                 return str(latest)
-
         except Exception:
             pass
 
@@ -253,31 +169,17 @@ class VideoDownloader:
     ):
 
         if not url:
-            raise ValueError(
-                "Video URL cannot be empty."
-            )
-
-        # -----------------------------------------------------
-        # Output
-        # -----------------------------------------------------
+            raise ValueError("Video URL cannot be empty.")
 
         output_template = os.path.join(
             str(self.download_dir),
             "%(title)s.%(ext)s",
         )
 
-        # -----------------------------------------------------
-        # Format
-        # -----------------------------------------------------
-
         format_spec = self._get_format_spec(
             format_type,
             resolution,
         )
-
-        # -----------------------------------------------------
-        # Options
-        # -----------------------------------------------------
 
         options = self._build_options(
             output_template=output_template,
@@ -308,96 +210,60 @@ class VideoDownloader:
         info = None
         expected_path = None
 
-        # -----------------------------------------------------
-        # Download
-        # -----------------------------------------------------
-
         try:
-
             with yt_dlp.YoutubeDL(options) as ydl:
-
                 info = ydl.extract_info(
                     url,
                     download=True,
                 )
-
                 if not info:
-                    raise RuntimeError(
-                        "yt-dlp returned no video information."
-                    )
+                    raise RuntimeError("yt-dlp returned no video information.")
 
-                expected_path = ydl.prepare_filename(
-                    info
-                )
+                expected_path = ydl.prepare_filename(info)
 
         except Exception as error:
-
             error_message = str(error)
 
             print("=" * 60)
-            print("YT-DLP ERROR")
+            print("YT-DLP PRIMARY DOWNLOAD ERROR")
             print(error_message)
             print("=" * 60)
 
-            # -----------------------------------------------
-            # FORMAT ERROR
-            # -----------------------------------------------
+            # Fallback client recovery sequence
+            fallback_clients = ["android", "android_vr", "mweb", "ios", "tv_embedded", "web"]
+            fallback_format = "b/best/worst" if format_type == "video" else "bestaudio/best/worst"
+            
+            success = False
+            last_fallback_err = None
 
-            if (
-                "requested format is not available"
-                in error_message.lower()
-            ):
+            for client in fallback_clients:
+                print(f"Attempting recovery with player_client={client}...")
+                fallback_options = dict(options)
+                fallback_options["format"] = fallback_format
+                fallback_options["extractor_args"] = {
+                    "youtube": {
+                        "player_client": [client],
+                        "player_skip": ["webpage", "configs"],
+                    }
+                }
+                try:
+                    with yt_dlp.YoutubeDL(fallback_options) as ydl:
+                        info = ydl.extract_info(url, download=True)
+                        if info:
+                            expected_path = ydl.prepare_filename(info)
+                            success = True
+                            print(f"Recovery succeeded with player_client={client}")
+                            break
+                except Exception as fb_err:
+                    last_fallback_err = fb_err
+                    print(f"Recovery with player_client={client} failed: {fb_err}")
+                    continue
 
+            if not success:
                 raise RuntimeError(
-                    "The requested video format is not "
-                    "available for this YouTube video/client. "
-                    "Try resolution='best'. "
-                    f"yt-dlp error: {error_message}"
-                ) from error
+                    f"yt-dlp download failed: {error_message} (Fallback error: {last_fallback_err})"
+                ) from (last_fallback_err or error)
 
-            # -----------------------------------------------
-            # 403 ERROR
-            # -----------------------------------------------
-
-            if (
-                "403" in error_message
-                or "forbidden" in error_message.lower()
-            ):
-
-                raise RuntimeError(
-                    "YouTube returned HTTP 403 Forbidden. "
-                    "The request was rejected by YouTube. "
-                    "This is not an FFmpeg error. "
-                    "Your Streamlit Cloud environment may "
-                    "require a current YouTube PO-token/client "
-                    "configuration or may be affected by "
-                    "YouTube's cloud/datacenter restrictions. "
-                    f"Original error: {error_message}"
-                ) from error
-
-            # -----------------------------------------------
-            # SIGN-IN / BOT
-            # -----------------------------------------------
-
-            if (
-                "sign in" in error_message.lower()
-                or "bot" in error_message.lower()
-            ):
-
-                raise RuntimeError(
-                    "YouTube requires additional verification "
-                    "for this request. "
-                    f"Original error: {error_message}"
-                ) from error
-
-            # -----------------------------------------------
-            # EVERYTHING ELSE
-            # -----------------------------------------------
-
-            raise RuntimeError(
-                f"yt-dlp download failed: "
-                f"{error_message}"
-            ) from error
 
         # -----------------------------------------------------
         # Find final file
@@ -472,10 +338,14 @@ class VideoDownloader:
 
         print("=" * 60)
         print("DOWNLOAD SUCCESS")
-        print(f"File: {filepath}")
+        try:
+            print(f"File: {filepath}")
+        except Exception:
+            print("File downloaded successfully.")
         print(
             f"Size: {size / (1024 * 1024):.2f} MB"
         )
         print("=" * 60)
+
 
         return filepath
