@@ -10,7 +10,13 @@ class PlaylistExtractor:
         options = {
             "quiet": True,
             "extract_flat": True,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android"]
+                }
+            },
         }
+
 
 
         try:

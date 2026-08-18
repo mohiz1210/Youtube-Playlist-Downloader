@@ -50,7 +50,13 @@ class VideoDownloader:
             "quiet": True,
             "noplaylist": True,
             "format": format_spec,
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android"]
+                }
+            },
         }
+
 
         if FFMPEG_EXE:
             options["ffmpeg_location"] = FFMPEG_EXE
