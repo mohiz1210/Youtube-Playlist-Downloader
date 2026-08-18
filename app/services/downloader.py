@@ -378,9 +378,20 @@ class VideoDownloader:
             # Ordered by which clients currently tend to avoid
             # PO-token / 403 issues most often — this changes as
             # YouTube adjusts its anti-bot rules, so revisit periodically.
+            # (mweb is deliberately NOT prioritized here despite sometimes
+            # failing with a different-looking error — verified it only
+            # ever returns storyboard/thumbnail formats via this
+            # extraction path, never real video/audio, regardless of IP.)
             fallback_clients = ["android", "android_vr", "mweb", "ios", "tv_embedded"]
             fallback_formats = (
-                ["b/best/worst", "18/22/b/best"]
+                # bestvideo*+bestaudio FIRST: some clients only serve
+                # split video-only/audio-only DASH streams, never a
+                # combined one — a selector that only ever asks for a
+                # combined format ("b/best") matches nothing there even
+                # when real formats exist, surfacing as a confusing
+                # "Requested format is not available" instead of trying
+                # the merge that would actually work.
+                ["bestvideo*+bestaudio/best", "b/best/worst", "18/22/b/best"]
                 if format_type == "video"
                 else ["bestaudio/best/worst"]
             )
