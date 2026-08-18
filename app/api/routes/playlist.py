@@ -1,5 +1,5 @@
 
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Request
 
 from app.schemas.playlist_schema import (
     PlaylistRequest,
@@ -17,12 +17,23 @@ from app.services.playlist_downloader import PlaylistDownloader
 from app.utils.validator import validate_youtube_url
 from app.core.exceptions import PlaylistError
 from app.jobs.manager import job_manager
+from app.utils.quota import check_and_consume, QuotaExceededError
 
 
 router = APIRouter()
 
 playlist_service = PlaylistService()
 playlist_downloader = PlaylistDownloader()
+
+
+def _client_ip(request: Request) -> str | None:
+    """Best-effort real client IP — prefer X-Forwarded-For (set by
+    reverse proxies / hosting platforms) since request.client.host would
+    otherwise just be the proxy's own address."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else None
 
 
 # =========================================================
@@ -72,6 +83,7 @@ async def extract_playlist(
 async def download_playlist(
     payload: PlaylistRequest,
     background_tasks: BackgroundTasks,
+    request: Request,
 ):
 
     if not validate_youtube_url(payload.url):
@@ -80,6 +92,14 @@ async def download_playlist(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid YouTube playlist URL",
         )
+
+    # One playlist job = one unit of quota, regardless of how many videos
+    # it contains — extraction above stays free either way.
+    has_own_cookies = bool(payload.cookies_txt and payload.cookies_txt.strip())
+    try:
+        check_and_consume(_client_ip(request), has_own_cookies)
+    except QuotaExceededError as error:
+        raise HTTPException(status_code=429, detail=str(error))
 
     try:
 

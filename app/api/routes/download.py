@@ -1,16 +1,34 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi import HTTPException
 
 from app.schemas.download import DownloadRequest
 from app.services.downloader import VideoDownloader
+from app.utils.quota import check_and_consume, QuotaExceededError
 
 router = APIRouter()
 
 
+def _client_ip(request: Request) -> str | None:
+    """Best-effort real client IP — prefer X-Forwarded-For (set by
+    reverse proxies / hosting platforms) since request.client.host would
+    otherwise just be the proxy's own address."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+
 @router.post("/download/video")
 async def download_video(
-    payload: DownloadRequest
+    payload: DownloadRequest,
+    request: Request,
 ):
+
+    has_own_cookies = bool(payload.cookies_txt and payload.cookies_txt.strip())
+    try:
+        check_and_consume(_client_ip(request), has_own_cookies)
+    except QuotaExceededError as error:
+        raise HTTPException(status_code=429, detail=str(error))
 
     try:
 

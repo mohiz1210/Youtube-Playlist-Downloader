@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import time
+import uuid
 import requests
 from pathlib import Path
 from dotenv import load_dotenv
@@ -13,6 +14,26 @@ from app.services.backend_client import (
     download_single_video_api,
     get_zip_file_bytes,
 )
+from app.utils.quota import remaining as quota_remaining, FREE_DOWNLOADS_PER_VISITOR
+
+
+def _resolve_visitor_id() -> str:
+    """Best-effort visitor identity for the shared-cookies quota: prefer
+    the real client IP (survives new tabs/reruns, so it can't be reset by
+    just reloading the page); fall back to a per-browser-session id stored
+    in session_state if the IP isn't available (e.g. local dev)."""
+    try:
+        ip = st.context.ip_address
+    except Exception:
+        ip = None
+    if ip:
+        return f"ip:{ip}"
+    if "visitor_session_id" not in st.session_state:
+        st.session_state["visitor_session_id"] = str(uuid.uuid4())
+    return f"session:{st.session_state['visitor_session_id']}"
+
+
+VISITOR_ID = _resolve_visitor_id()
 
 CIRCULAR_LOGO = Path(__file__).parent / "assets" / "logo_circular.png"
 LOGO_PATH = CIRCULAR_LOGO if CIRCULAR_LOGO.exists() else (Path(__file__).parent / "assets" / "logo.png")
@@ -148,10 +169,11 @@ else:
 # YouTube often requires proof of a real, logged-in session before it will
 # allow a download ("Sign in to confirm you're not a bot"). If you don't
 # supply your own cookies here, your download rides on the app owner's
-# shared cookies (if they've configured any) — fine for occasional use, but
-# under heavier traffic that shared account can get rate-limited or
-# temporarily locked out by YouTube. Supplying your own keeps your
-# downloads working independently of that.
+# shared cookies (if they've configured any), limited to a small number of
+# free downloads per visitor so no one visitor can exhaust the owner's
+# account — see app/utils/quota.py. Supplying your own removes that limit
+# entirely, since it then uses your own session instead of the shared one.
+_free_left = quota_remaining(VISITOR_ID)
 st.sidebar.markdown("---")
 with st.sidebar.expander("🍪 YouTube Cookies (optional)"):
     st.caption(
@@ -176,6 +198,12 @@ with st.sidebar.expander("🍪 YouTube Cookies (optional)"):
         "Sent only with your own download requests, never stored on the "
         "server or shared with other visitors."
     )
+    st.caption(
+        f"Without your own cookies, you get {FREE_DOWNLOADS_PER_VISITOR} "
+        "free download on the shared session "
+        f"({_free_left} left for you right now); after that, downloads "
+        "need your own cookies pasted above."
+    )
 
 cookies_txt = None
 if cookies_file_upload is not None:
@@ -184,7 +212,12 @@ elif cookies_text_input.strip():
     cookies_txt = cookies_text_input.strip()
 
 if cookies_txt:
-    st.sidebar.success("✅ Using your own YouTube cookies")
+    st.sidebar.success("✅ Using your own YouTube cookies (no download limit)")
+elif _free_left <= 0:
+    st.sidebar.warning(
+        "⚠️ You've used your free shared-cookie download — add your own "
+        "cookies above to keep downloading."
+    )
 
 
 # Navigation Tabs
@@ -347,6 +380,7 @@ with tab1:
                     audio_format,
                     selected_ids if selected_ids else None,
                     cookies_txt=cookies_txt,
+                    visitor_id=VISITOR_ID,
                 )
                 if success:
                     st.session_state["active_job_id"] = job_data["job_id"]
@@ -375,6 +409,7 @@ with tab2:
                     resolution,
                     audio_format,
                     cookies_txt=cookies_txt,
+                    visitor_id=VISITOR_ID,
                 )
                 if success:
                     filepath = data.get("filepath", "")
