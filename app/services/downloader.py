@@ -29,28 +29,29 @@ class VideoDownloader:
         resolution_map = {
             "1080p": (
                 "bestvideo[height<=1080]+bestaudio/"
-                "best[height<=1080]/best"
+                "best[height<=1080]/b/best"
             ),
             "720p": (
                 "bestvideo[height<=720]+bestaudio/"
-                "best[height<=720]/best"
+                "best[height<=720]/b/best"
             ),
             "480p": (
                 "bestvideo[height<=480]+bestaudio/"
-                "best[height<=480]/best"
+                "best[height<=480]/b/best"
             ),
             "360p": (
                 "bestvideo[height<=360]+bestaudio/"
-                "best[height<=360]/best"
+                "best[height<=360]/b/best"
             ),
             "worst": "worst",
-            "best": "bestvideo+bestaudio/best",
+            "best": "bestvideo+bestaudio/b/best",
         }
 
         return resolution_map.get(
             resolution,
-            "bestvideo+bestaudio/best"
+            "bestvideo+bestaudio/b/best"
         )
+
 
     def _find_downloaded_file(
         self,
@@ -288,19 +289,32 @@ class VideoDownloader:
                 "403" in error_message
                 or "Forbidden" in error_message
             ):
+                print("Attempting 403 Forbidden recovery using android player_client and progressive stream (b/best)...")
+                options["format"] = "b/best" if format_type == "video" else "bestaudio/best"
+                options["extractor_args"] = {
+                    "youtube": {
+                        "player_client": ["android"]
+                    }
+                }
+                try:
+                    with yt_dlp.YoutubeDL(options) as ydl:
+                        info = ydl.extract_info(
+                            url,
+                            download=True,
+                        )
+                        if info:
+                            filepath = ydl.prepare_filename(info)
+                        else:
+                            raise error
+                except Exception as fallback_err:
+                    raise RuntimeError(
+                        f"yt-dlp download failed after 403 fallback: {fallback_err}"
+                    ) from fallback_err
+            else:
                 raise RuntimeError(
-                    "YouTube returned HTTP 403 Forbidden. "
-                    "The deployed server was not allowed to "
-                    "download this media. "
-                    "This can be caused by YouTube's current "
-                    "client/PO-token requirements or by the "
-                    "cloud server's IP environment. "
-                    f"Original error: {error_message}"
+                    f"yt-dlp download failed: {error_message}"
                 ) from error
 
-            raise RuntimeError(
-                f"yt-dlp download failed: {error_message}"
-            ) from error
 
         # --------------------------------------------------
         # Find actual downloaded file
@@ -368,14 +382,18 @@ class VideoDownloader:
                     "Downloaded file is empty."
                 )
 
-            print(
-                f"Download completed successfully: "
-                f"{filepath}"
-            )
+            try:
+                print(
+                    f"Download completed successfully: "
+                    f"{filepath}"
+                )
+            except Exception:
+                print("Download completed successfully.")
 
             print(
                 f"File size: {file_size / (1024 * 1024):.2f} MB"
             )
+
 
         except OSError as error:
 
