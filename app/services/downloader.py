@@ -158,7 +158,7 @@ class VideoDownloader:
             "check_formats": None,
             "extractor_args": {
                 "youtube": {
-                    "player_client": ["android"],
+                    "player_client": ["android_vr", "android", "mweb"],
                     "player_skip": ["webpage", "configs"],
                 }
             },
@@ -184,7 +184,7 @@ class VideoDownloader:
  
         return options
 
- 
+
     def download(
         self,
         url: str,
@@ -215,17 +215,6 @@ class VideoDownloader:
  
         # --------------------------------------------------
         # yt-dlp options
-        #
-        # IMPORTANT:
-        # We intentionally do NOT force:
-        #
-        # "player_client": ["android"]
-        #
-        # by default, because this can cause YouTube 403
-        # errors when deployed on cloud/datacenter
-        # environments. It's only used as one of several
-        # fallback clients below if the primary attempt
-        # fails with a 403.
         # --------------------------------------------------
         options = self._build_base_options(
             output_template,
@@ -279,17 +268,14 @@ class VideoDownloader:
             print(error_message)
             print("========================================")
  
-            if "403" in error_message or "Forbidden" in error_message:
- 
-                # --------------------------------------------------
-                # 403 recovery: try several player clients in turn.
-                # A 403 is frequently client-specific (YouTube
-                # rotates which client is "healthy") or IP-specific
-                # (datacenter IP blocked regardless of client).
-                # Trying multiple clients before giving up is far
-                # more robust than hardcoding a single one.
-                # --------------------------------------------------
-                fallback_clients = ["android", "tv_embedded", "web"]
+            is_bot_or_403 = any(
+                term in error_message.lower()
+                for term in ["403", "forbidden", "sign in", "bot", "format is not available"]
+            )
+
+            if is_bot_or_403:
+                fallback_clients = ["android_vr", "android", "mweb", "ios"]
+
                 fallback_format = (
                     "b/best" if format_type == "video" else "bestaudio/best"
                 )
