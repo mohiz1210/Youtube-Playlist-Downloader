@@ -274,11 +274,12 @@ class VideoDownloader:
             )
 
             if is_bot_or_403:
-                fallback_clients = ["android_vr", "android", "mweb", "ios"]
+                fallback_clients = ["android_vr", "android", "mweb", "ios", "tv_embedded", "web"]
 
                 fallback_format = (
-                    "b/best" if format_type == "video" else "bestaudio/best"
+                    "b/best/worst" if format_type == "video" else "bestaudio/best/worst"
                 )
+
  
                 success = False
                 last_fallback_error = None
