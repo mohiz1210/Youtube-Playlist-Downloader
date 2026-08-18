@@ -21,14 +21,14 @@ class VideoDownloader:
             return "bestaudio/best"
 
         resolution_map = {
-            "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-            "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]",
-            "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]",
-            "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]",
+            "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/b/best",
+            "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]/b/best",
+            "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]/b/best",
+            "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]/b/best",
             "worst": "worst",
-            "best": "bestvideo+bestaudio/best",
+            "best": "bestvideo+bestaudio/b/best",
         }
-        return resolution_map.get(resolution, "bestvideo+bestaudio/best")
+        return resolution_map.get(resolution, "bestvideo+bestaudio/b/best")
 
     def download(
         self,
@@ -71,11 +71,29 @@ class VideoDownloader:
         if progress_hook:
             options["progress_hooks"] = [progress_hook]
 
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(
-                url,
-                download=True,
-            )
+        try:
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(
+                    url,
+                    download=True,
+                )
+        except Exception as error:
+            if "403" in str(error) or "Forbidden" in str(error):
+                # Guaranteed fallback for cloud datacenter IPs
+                options["format"] = "b/best" if format_type == "video" else "bestaudio/best"
+                options["extractor_args"] = {
+                    "youtube": {
+                        "player_client": ["android"]
+                    }
+                }
+                with yt_dlp.YoutubeDL(options) as ydl:
+                    info = ydl.extract_info(
+                        url,
+                        download=True,
+                    )
+            else:
+                raise error
+
             if not info:
                 raise RuntimeError("Failed to download video file or format unavailable.")
 
