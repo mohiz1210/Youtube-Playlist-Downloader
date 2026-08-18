@@ -79,29 +79,19 @@ class VideoDownloader:
             "merge_output_format": "mp4",
             "continuedl": True,
             "force_ipv4": True,
-            "retries": 5,
-            "fragment_retries": 5,
+            "retries": 3,
+            "fragment_retries": 3,
             "nocheckcertificate": True,
             "geo_bypass": True,
             "check_formats": None,
-            # Throttle requests — bursty traffic from a shared/datacenter
-            # IP (Streamlit Cloud, etc.) gets flagged much faster than
-            # traffic that looks like a normal client.
-            "sleep_interval_requests": 2,
-            "sleep_interval": 2,
-            "max_sleep_interval": 6,
-            "ratelimit": 3_000_000,  # ~3 MB/s cap
             "extractor_args": {
                 "youtube": {
-                    # tv_embedded / mweb currently need a PO-token less
-                    # often than android does. This list is a moving
-                    # target — YouTube changes which clients it trusts
-                    # regularly, so expect to retune it.
-                    "player_client": ["tv_embedded", "mweb", "ios", "android_vr"],
+                    "player_client": ["android", "android_vr"],
                     "player_skip": ["webpage", "configs"],
                 }
             },
         }
+
  
         if FFMPEG_EXE:
             options["ffmpeg_location"] = FFMPEG_EXE
@@ -254,7 +244,8 @@ class VideoDownloader:
             # Ordered by which clients currently tend to avoid
             # PO-token / 403 issues most often — this changes as
             # YouTube adjusts its anti-bot rules, so revisit periodically.
-            fallback_clients = ["tv_embedded", "mweb", "ios", "android_vr", "android", "web"]
+            fallback_clients = ["android", "android_vr", "mweb", "ios"]
+
             fallback_format = "b/best/worst" if format_type == "video" else "bestaudio/best/worst"
  
             success = False
