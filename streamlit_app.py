@@ -323,7 +323,7 @@ with tab2:
 
     if st.button("📥 Download Single Video", type="primary"):
         if video_url:
-            with st.spinner("Downloading video... Please wait."):
+            with st.spinner("Downloading video/audio... Please wait."):
                 success, data, error_msg = download_single_video_api(
                     API_BASE_URL,
                     video_url,
@@ -333,19 +333,32 @@ with tab2:
                 )
                 if success:
                     filepath = data.get("filepath", "")
-                    st.success("Download complete!")
                     if filepath and os.path.exists(filepath):
                         with open(filepath, "rb") as f:
-                            st.download_button(
-                                label=f"💾 Save File ({Path(filepath).name}) to Your Computer",
-                                data=f.read(),
-                                file_name=Path(filepath).name,
-                                mime="application/octet-stream",
-                                type="primary",
-                                use_container_width=True,
-                            )
+                            st.session_state["single_video_ready"] = {
+                                "bytes": f.read(),
+                                "filename": Path(filepath).name,
+                            }
+                        st.rerun()
+                    else:
+                        st.error("Downloaded file not found on disk.")
                 else:
                     st.error(f"Download failed: {error_msg}")
+
+    if "single_video_ready" in st.session_state:
+        file_info = st.session_state["single_video_ready"]
+        st.markdown("---")
+        st.success(f"🎉 Download complete: **{file_info['filename']}**")
+        st.download_button(
+            label=f"💾 Save File ({file_info['filename']}) to Your Computer",
+            data=file_info["bytes"],
+            file_name=file_info["filename"],
+            mime="application/octet-stream",
+            type="primary",
+            use_container_width=True,
+            key="single_video_save_btn",
+        )
+
 
 
 

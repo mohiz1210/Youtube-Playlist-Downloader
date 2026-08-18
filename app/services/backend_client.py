@@ -16,14 +16,13 @@ def extract_playlist_api(api_base_url: str, url: str):
         res = requests.post(
             f"{api_base_url}/playlist/extract",
             json={"url": url},
-            timeout=5,
+            timeout=0.5,
         )
         if res.status_code == 200:
             return True, res.json(), None
         detail = res.json().get("detail", res.text) if res.content else f"HTTP {res.status_code}"
         return False, None, detail
     except Exception:
-        # Fallback to direct Python execution (e.g. Streamlit Cloud)
         try:
             data = playlist_service.get_playlist(url)
             return True, data, None
@@ -51,14 +50,13 @@ def start_playlist_download_api(
         res = requests.post(
             f"{api_base_url}/playlist/download",
             json=payload,
-            timeout=5,
+            timeout=0.5,
         )
         if res.status_code == 202:
             return True, res.json(), None
         detail = res.json().get("detail", res.text) if res.content else f"HTTP {res.status_code}"
         return False, None, detail
     except Exception:
-        # Fallback to direct Python execution (e.g. Streamlit Cloud)
         try:
             playlist = playlist_service.get_playlist(url)
             videos_to_download = playlist["videos"]
@@ -102,7 +100,7 @@ def start_playlist_download_api(
 def get_job_status_api(api_base_url: str, job_id: str):
     """Get job status via HTTP or direct job manager fallback."""
     try:
-        res = requests.get(f"{api_base_url}/playlist/status/{job_id}", timeout=3)
+        res = requests.get(f"{api_base_url}/playlist/status/{job_id}", timeout=0.5)
         if res.status_code == 200:
             return res.json()
     except Exception:
@@ -110,11 +108,10 @@ def get_job_status_api(api_base_url: str, job_id: str):
     return job_manager.get_job(job_id)
 
 
-
 def control_job_api(api_base_url: str, job_id: str, action: str):
     """Control job (pause/resume/cancel/retry) via HTTP or direct job manager fallback."""
     try:
-        res = requests.post(f"{api_base_url}/playlist/jobs/{job_id}/{action}", timeout=3)
+        res = requests.post(f"{api_base_url}/playlist/jobs/{job_id}/{action}", timeout=0.5)
         if res.status_code == 200:
             return res.json()
     except Exception:
@@ -146,7 +143,7 @@ def download_single_video_api(
         "audio_format": audio_format,
     }
     try:
-        res = requests.post(f"{api_base_url}/download/video", json=payload, timeout=5)
+        res = requests.post(f"{api_base_url}/download/video", json=payload, timeout=0.5)
         if res.status_code == 200:
             return True, res.json(), None
         return False, None, res.text
@@ -171,11 +168,12 @@ from app.utils.filehandler import DOWNLOAD_DIRECTORY, sanitize_folder_name
 def get_zip_file_bytes(api_base_url: str, job_id: str):
     """Get zip bytes via HTTP or direct zip creation fallback."""
     try:
-        zip_res = requests.get(f"{api_base_url}/download/zip/{job_id}", timeout=5)
+        zip_res = requests.get(f"{api_base_url}/download/zip/{job_id}", timeout=0.5)
         if zip_res.status_code == 200:
             return zip_res.content
     except Exception:
         pass
+
 
     job = job_manager.get_job(job_id)
     if not job:
