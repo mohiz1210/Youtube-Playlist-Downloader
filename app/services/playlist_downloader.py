@@ -27,10 +27,19 @@ class PlaylistDownloader:
     ):
 
         def progress_hook(data):
+            if job_manager.is_cancelled(job_id):
+                raise RuntimeError("JOB_CANCELLED_BY_USER")
+
+            import time
+            while job_manager.is_paused(job_id):
+                if job_manager.is_cancelled(job_id):
+                    raise RuntimeError("JOB_CANCELLED_BY_USER")
+                time.sleep(1)
 
             status = data.get(
                 "status"
             )
+
 
             # ---------------------------------------------
             # DOWNLOADING
@@ -133,70 +142,71 @@ class PlaylistDownloader:
         self,
         job_id: str,
         video: dict,
+        format_type: str = "video",
+        resolution: str = "best",
+        audio_format: str = "mp3",
+        playlist_title: str | None = None,
     ):
-
-        video_id = video.get(
-            "id"
-        )
-
-        video_url = video.get(
-            "url"
-        )
-
-        video_title = video.get(
-            "title",
-            "Unknown title"
-        )
+        video_id = video.get("id")
+        video_url = video.get("url")
+        video_title = video.get("title", "Unknown title")
 
         try:
+            if job_manager.is_cancelled(job_id):
+                return {"status": "cancelled", "video_id": video_id}
 
             if not video_url:
+                raise ValueError("Video URL is missing")
 
-                raise ValueError(
-                    "Video URL is missing"
-                )
-
-            # Mark video as downloading
             job_manager.update_video(
                 job_id,
                 video_id,
                 status="downloading",
             )
 
-            # Set current video
             job_manager.update_job(
                 job_id,
                 current_video=video_title,
             )
 
-            # Create progress hook
-            progress_hook = (
-                self.create_progress_hook(
-                    job_id,
-                    video_id,
-                )
+            progress_hook = self.create_progress_hook(
+                job_id,
+                video_id,
             )
 
-            # Create downloader
-            downloader = VideoDownloader()
+            if not playlist_title:
+                job_info = job_manager.get_job(job_id)
+                playlist_title = job_info.get("playlist_title") if job_info else f"job_{job_id}"
 
-            # Download
+            downloader = VideoDownloader(subfolder=playlist_title)
+
             filepath = downloader.download(
                 video_url,
                 progress_hook=progress_hook,
+                format_type=format_type,
+                resolution=resolution,
+                audio_format=audio_format,
             )
+
+
+
+
+            # Check again if job was cancelled during download
+            if job_manager.is_cancelled(job_id):
+                job_manager.update_video(
+                    job_id,
+                    video_id,
+                    status="cancelled",
+                )
+                return {"status": "cancelled", "video_id": video_id}
 
             # Mark completed
             job_manager.update_video(
                 job_id,
                 video_id,
-
                 status="completed",
-
                 progress=100.0,
-
                 filepath=filepath,
-
                 eta=None,
             )
 
@@ -205,11 +215,9 @@ class PlaylistDownloader:
                 job_id
             )
 
-            if job:
-
+            if job and not job_manager.is_cancelled(job_id):
                 job_manager.update_job(
                     job_id,
-
                     completed=(
                         job["completed"] + 1
                     ),
@@ -222,6 +230,15 @@ class PlaylistDownloader:
             }
 
         except Exception as error:
+
+            if "JOB_CANCELLED_BY_USER" in str(error) or job_manager.is_cancelled(job_id):
+                job_manager.update_video(
+                    job_id,
+                    video_id,
+                    status="cancelled",
+                    error=None,
+                )
+                return {"status": "cancelled", "video_id": video_id}
 
             print(
                 f"[JOB {job_id}] "
@@ -245,7 +262,7 @@ class PlaylistDownloader:
                 job_id
             )
 
-            if job:
+            if job and not job_manager.is_cancelled(job_id):
 
                 job_manager.update_job(
                     job_id,
@@ -269,6 +286,10 @@ class PlaylistDownloader:
         self,
         job_id: str,
         videos: list[dict],
+        format_type: str = "video",
+        resolution: str = "best",
+        audio_format: str = "mp3",
+        playlist_title: str | None = None,
     ):
 
         job_manager.update_job(
@@ -282,7 +303,7 @@ class PlaylistDownloader:
 
         print(
             f"[JOB {job_id}] "
-            f"Starting {total_videos} videos"
+            f"Starting {total_videos} videos for playlist '{playlist_title}'"
         )
 
         with ThreadPoolExecutor(
@@ -297,11 +318,18 @@ class PlaylistDownloader:
                     self.download_single_video,
                     job_id,
                     video,
+                    format_type=format_type,
+                    resolution=resolution,
+                    audio_format=audio_format,
+                    playlist_title=playlist_title,
                 )
 
                 futures.append(
                     future
                 )
+
+
+
 
             for future in as_completed(
                 futures
@@ -317,6 +345,16 @@ class PlaylistDownloader:
                         f"[JOB {job_id}] "
                         f"Worker error: {error}"
                     )
+
+        # Check if job was cancelled
+        if job_manager.is_cancelled(job_id):
+            job_manager.update_job(
+                job_id,
+                status="cancelled",
+                current_video=None,
+            )
+            print(f"[JOB {job_id}] Cancelled cleanly")
+            return
 
         # Get final job
         job = job_manager.get_job(
@@ -358,4 +396,4 @@ class PlaylistDownloader:
         print(
             f"[JOB {job_id}] "
             f"Finished"
-        )
+        )

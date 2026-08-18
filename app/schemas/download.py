@@ -7,6 +7,13 @@ from pydantic import BaseModel
 
 class DownloadRequest(BaseModel):
     url: str
+    format_type: str = "video"  # "video" or "audio"
+    resolution: str = "best"    # "best", "1080p", "720p", "480p", "360p", "worst"
+    audio_format: str = "mp3"   # "mp3", "m4a", "wav", "flac"
+
+
+
+
 
 
 class DownloadResponse(BaseModel):

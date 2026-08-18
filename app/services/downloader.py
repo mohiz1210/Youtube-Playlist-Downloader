@@ -2,41 +2,60 @@ import os
 from pathlib import Path
 import yt_dlp
 
+try:
+    import imageio_ffmpeg
+    FFMPEG_EXE = imageio_ffmpeg.get_ffmpeg_exe()
+except Exception:
+    FFMPEG_EXE = None
+
+from app.utils.filehandler import create_download_directory
+
 
 class VideoDownloader:
 
-    DOWNLOAD_DIR = Path.home() / "Downloads"
+    def __init__(self, subfolder: str | None = None):
+        self.download_dir = create_download_directory(subfolder)
 
-    def __init__(self):
+    def _get_format_spec(self, format_type: str, resolution: str) -> str:
+        if format_type == "audio":
+            return "bestaudio/bestaudio*"
 
-        os.makedirs(
-            self.DOWNLOAD_DIR,
-            exist_ok=True
-        )
+        resolution_map = {
+            "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+            "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]",
+            "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]",
+            "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]",
+            "worst": "worst",
+            "best": "bestvideo+bestaudio/best",
+        }
+        return resolution_map.get(resolution, "bestvideo+bestaudio/best")
 
     def download(
         self,
         url: str,
         progress_hook=None,
+        format_type: str = "video",
+        resolution: str = "best",
+        audio_format: str = "mp3",
     ):
-
         output_template = os.path.join(
-            self.DOWNLOAD_DIR,
+            str(self.download_dir),
             "%(title)s.%(ext)s"
         )
 
+
+
+        format_spec = self._get_format_spec(format_type, resolution)
+
         options = {
-
             "outtmpl": output_template,
-
             "quiet": True,
-
             "noplaylist": True,
-
+            "format": format_spec,
+            "ignoreerrors": True,
             "js_runtimes": {
                 "node": {}
             },
-
             "extractor_args": {
                 "youtube": {
                     "player_client": [
@@ -47,24 +66,48 @@ class VideoDownloader:
             },
         }
 
-        # Add progress hook if provided
+        if FFMPEG_EXE:
+            options["ffmpeg_location"] = FFMPEG_EXE
+
+        if format_type == "audio":
+            options["postprocessors"] = [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": audio_format,
+                "preferredquality": "192",
+            }]
+
         if progress_hook:
+            options["progress_hooks"] = [progress_hook]
 
-            options["progress_hooks"] = [
-                progress_hook
-            ]
-
-        with yt_dlp.YoutubeDL(
-            options
-        ) as ydl:
-
+        with yt_dlp.YoutubeDL(options) as ydl:
             info = ydl.extract_info(
                 url,
                 download=True,
             )
+            if not info:
+                raise RuntimeError("Failed to download video file or format unavailable.")
 
-            filepath = ydl.prepare_filename(
-                info
-            )
+            filepath = ydl.prepare_filename(info)
+            if format_type == "audio":
+                base_path, _ = os.path.splitext(filepath)
+                final_audio_path = f"{base_path}.{audio_format}"
+
+                # Clean up original video file if separate from final audio file
+                if os.path.exists(filepath) and filepath != final_audio_path:
+                    try:
+                        os.remove(filepath)
+                    except Exception:
+                        pass
+
+                for ext in [".mp4", ".webm", ".mkv", ".3gp"]:
+                    leftover = f"{base_path}{ext}"
+                    if os.path.exists(leftover) and leftover != final_audio_path:
+                        try:
+                            os.remove(leftover)
+                        except Exception:
+                            pass
+
+                if os.path.exists(final_audio_path):
+                    filepath = final_audio_path
 
             return filepath

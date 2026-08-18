@@ -19,6 +19,7 @@ class JobManager:
         self,
         total_videos: int,
         videos: list[dict],
+        playlist_title: str = "Playlist",
     ):
 
         job_id = str(uuid.uuid4())
@@ -51,6 +52,7 @@ class JobManager:
 
         job = {
             "job_id": job_id,
+            "playlist_title": playlist_title,
             "status": "queued",
 
             "total_videos": total_videos,
@@ -67,6 +69,7 @@ class JobManager:
 
             "created_at": datetime.utcnow(),
         }
+
 
         with self.lock:
 
@@ -173,5 +176,64 @@ class JobManager:
 
             return video.copy()
 
+    # =====================================================
+    # JOB CONTROL METHODS
+    # =====================================================
 
-job_manager = JobManager()
+    def cancel_job(self, job_id: str) -> bool:
+        with self.lock:
+            job = self.jobs.get(job_id)
+            if not job:
+                return False
+            job["status"] = "cancelled"
+            job["current_video"] = None
+            for v in job["videos"].values():
+                if v["status"] in ("queued", "downloading"):
+                    v["status"] = "cancelled"
+            return True
+
+    def pause_job(self, job_id: str) -> bool:
+        with self.lock:
+            job = self.jobs.get(job_id)
+            if not job:
+                return False
+            job["status"] = "paused"
+            return True
+
+    def resume_job(self, job_id: str) -> bool:
+        with self.lock:
+            job = self.jobs.get(job_id)
+            if not job:
+                return False
+            job["status"] = "downloading"
+            return True
+
+    def reset_failed_videos(self, job_id: str) -> list[dict]:
+        with self.lock:
+            job = self.jobs.get(job_id)
+            if not job:
+                return []
+            failed_videos = []
+            for v in job["videos"].values():
+                if v["status"] == "failed":
+                    v["status"] = "queued"
+                    v["error"] = None
+                    v["progress"] = 0.0
+                    failed_videos.append(v.copy())
+            if failed_videos:
+                job["failed"] = max(0, job["failed"] - len(failed_videos))
+                job["status"] = "downloading"
+            return failed_videos
+
+    def is_cancelled(self, job_id: str) -> bool:
+        with self.lock:
+            job = self.jobs.get(job_id)
+            return job.get("status") == "cancelled" if job else False
+
+    def is_paused(self, job_id: str) -> bool:
+        with self.lock:
+            job = self.jobs.get(job_id)
+            return job.get("status") == "paused" if job else False
+
+
+job_manager = JobManager()

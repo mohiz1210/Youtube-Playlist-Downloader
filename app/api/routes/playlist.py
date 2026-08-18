@@ -87,21 +87,43 @@ async def download_playlist(
             payload.url
         )
 
+        videos_to_download = playlist["videos"]
+        if payload.selected_video_ids:
+            videos_to_download = [
+                v for v in videos_to_download
+                if v.get("id") in payload.selected_video_ids
+            ]
+
+        if not videos_to_download:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No matching videos found for download"
+            )
+
         # Get total number of videos
-        total_videos = playlist["video_count"]
+        total_videos = len(videos_to_download)
 
         # Create download job
         job = job_manager.create_job(
             total_videos=total_videos,
-            videos=playlist["videos"]
+            videos=videos_to_download,
+            playlist_title=playlist["title"],
         )
 
         # Start playlist download in background
         background_tasks.add_task(
             playlist_downloader.download_playlist,
             job["job_id"],
-            playlist["videos"],
+            videos_to_download,
+            format_type=payload.format_type,
+            resolution=payload.resolution,
+            audio_format=payload.audio_format,
+            playlist_title=playlist["title"],
         )
+
+
+
+
 
         # Return job information immediately
         return {
@@ -109,6 +131,7 @@ async def download_playlist(
             "status": job["status"],
             "total_videos": job["total_videos"],
         }
+
 
     except PlaylistError as error:
 
@@ -142,3 +165,68 @@ async def get_playlist_status(
         )
 
     return job
+
+
+# =========================================================
+# JOB CONTROL ROUTES
+# =========================================================
+
+@router.post("/playlist/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str):
+    success = job_manager.cancel_job(job_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found"
+        )
+    return {"status": "success", "message": "Job cancelled", "job_id": job_id}
+
+
+@router.post("/playlist/jobs/{job_id}/pause")
+async def pause_job(job_id: str):
+    success = job_manager.pause_job(job_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found"
+        )
+    return {"status": "success", "message": "Job paused", "job_id": job_id}
+
+
+@router.post("/playlist/jobs/{job_id}/resume")
+async def resume_job(job_id: str):
+    success = job_manager.resume_job(job_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found"
+        )
+    return {"status": "success", "message": "Job resumed", "job_id": job_id}
+
+
+@router.post("/playlist/jobs/{job_id}/retry")
+async def retry_failed_job(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+):
+    failed_videos = job_manager.reset_failed_videos(job_id)
+    if not failed_videos:
+        job = job_manager.get_job(job_id)
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Job not found"
+            )
+        return {"status": "info", "message": "No failed videos to retry", "job_id": job_id}
+
+    background_tasks.add_task(
+        playlist_downloader.download_playlist,
+        job_id,
+        failed_videos,
+    )
+    return {
+        "status": "success",
+        "message": f"Retrying {len(failed_videos)} failed video(s)",
+        "job_id": job_id,
+    }
+
