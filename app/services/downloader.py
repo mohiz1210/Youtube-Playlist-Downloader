@@ -39,27 +39,27 @@ class VideoDownloader:
         resolution_map = {
             "1080p": (
                 "bestvideo[height<=1080]+bestaudio/"
-                "best[height<=1080]/b/best"
+                "best[height<=1080]/b/best/worst"
             ),
             "720p": (
                 "bestvideo[height<=720]+bestaudio/"
-                "best[height<=720]/b/best"
+                "best[height<=720]/b/best/worst"
             ),
             "480p": (
                 "bestvideo[height<=480]+bestaudio/"
-                "best[height<=480]/b/best"
+                "best[height<=480]/b/best/worst"
             ),
             "360p": (
                 "bestvideo[height<=360]+bestaudio/"
-                "best[height<=360]/b/best"
+                "best[height<=360]/b/best/worst"
             ),
             "worst": "worst",
-            "best": "bestvideo+bestaudio/b/best",
+            "best": "bestvideo+bestaudio/b/best/worst",
         }
  
         return resolution_map.get(
             resolution,
-            "bestvideo+bestaudio/b/best"
+            "bestvideo+bestaudio/b/best/worst"
         )
  
     def _find_downloaded_file(
