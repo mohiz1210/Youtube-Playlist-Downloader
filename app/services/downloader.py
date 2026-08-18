@@ -174,8 +174,61 @@ class VideoDownloader:
         except Exception:
             pass
  
-        return None
- 
+    def _download_direct_stream(self, url: str) -> tuple[bool, str | None]:
+        """
+        Ultimate fallback: extract media URL with download=False and stream byte chunks directly via urllib.
+        """
+        opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "format": "b/best",
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android"],
+                    "player_skip": ["webpage", "configs"],
+                }
+            },
+        }
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                if not info:
+                    return False, None
+                expected = ydl.prepare_filename(info)
+                media_url = info.get("url")
+                if not media_url:
+                    for fmt in reversed(info.get("formats", [])):
+                        if fmt.get("url") and fmt.get("vcodec") != "none":
+                            media_url = fmt.get("url")
+                            break
+                if not media_url:
+                    return False, None
+
+                print(f"Direct urllib stream extraction downloading...")
+                req = urllib.request.Request(
+                    media_url,
+                    headers={
+                        "User-Agent": (
+                            "com.google.android.youtube/19.29.37 (Linux; U; Android 11)"
+                        ),
+                        "Accept": "*/*",
+                    },
+                )
+                with urllib.request.urlopen(req, timeout=60) as resp, open(expected, "wb") as f:
+                    while True:
+                        chunk = resp.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+
+                if os.path.exists(expected) and os.path.getsize(expected) > 0:
+                    print("Direct urllib stream extraction succeeded!")
+                    return True, expected
+        except Exception as exc:
+            print(f"Direct stream recovery extraction failed: {exc}")
+
+        return False, None
+
     # ---------------------------------------------------------
     # MAIN DOWNLOAD
     # ---------------------------------------------------------
@@ -296,16 +349,15 @@ class VideoDownloader:
                             f"Recovery with player_client={client}, format={fmt} failed: {fb_err}"
                         )
                         continue
-                if success:
-                    break
- 
             if not success:
                 print("Standard fallback clients failed. Attempting direct urllib stream extraction recovery...")
                 direct_ok, direct_path = self._download_direct_stream(url)
                 if direct_ok and direct_path:
                     expected_path = direct_path
+                    info = {"filepath": direct_path}
                     success = True
                     print(f"Direct stream recovery succeeded: {direct_path}")
+
 
             if not success:
                 hint = (
@@ -319,66 +371,9 @@ class VideoDownloader:
                     f"(Fallback error: {last_fallback_err}){hint}"
                 ) from (last_fallback_err or error)
 
-    def _download_direct_stream(self, url: str) -> tuple[bool, str | None]:
-        """
-        Ultimate fallback: extract media URL with download=False and stream byte chunks directly via urllib.
-        """
-        opts = {
-            "quiet": True,
-            "no_warnings": True,
-            "format": "b/best",
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android"],
-                    "player_skip": ["webpage", "configs"],
-                }
-            },
-        }
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                if not info:
-                    return False, None
-                expected = ydl.prepare_filename(info)
-                media_url = info.get("url")
-                if not media_url:
-                    for fmt in reversed(info.get("formats", [])):
-                        if fmt.get("url") and fmt.get("vcodec") != "none":
-                            media_url = fmt.get("url")
-                            break
-                if not media_url:
-                    return False, None
-
-                print(f"Direct urllib stream extraction downloading...")
-                req = urllib.request.Request(
-                    media_url,
-                    headers={
-                        "User-Agent": (
-                            "com.google.android.youtube/19.29.37 (Linux; U; Android 11)"
-                        ),
-                        "Accept": "*/*",
-                    },
-                )
-                with urllib.request.urlopen(req, timeout=60) as resp, open(expected, "wb") as f:
-                    while True:
-                        chunk = resp.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-
-                if os.path.exists(expected) and os.path.getsize(expected) > 0:
-                    print("Direct urllib stream extraction succeeded!")
-                    return True, expected
-        except Exception as exc:
-            print(f"Direct stream recovery extraction failed: {exc}")
-
-        return False, None
-
- 
         # -----------------------------------------------------
         # Find final file
         # -----------------------------------------------------
- 
         filepath = self._find_downloaded_file(
             info,
             expected_path,
