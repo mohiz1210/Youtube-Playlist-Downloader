@@ -21,14 +21,14 @@ class VideoDownloader:
             return "bestaudio/bestaudio*/best"
 
         resolution_map = {
-            "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-            "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]/best",
-            "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]/best",
-            "360p": "bestvideo[height<=360]+bestaudio/best[height<=360]/best",
+            "1080p": "bestvideo[height<=1080]+bestaudio/18/best[height<=1080]/b/best",
+            "720p": "bestvideo[height<=720]+bestaudio/18/best[height<=720]/b/best",
+            "480p": "bestvideo[height<=480]+bestaudio/18/best[height<=480]/b/best",
+            "360p": "bestvideo[height<=360]+bestaudio/18/best[height<=360]/b/best",
             "worst": "worst",
-            "best": "bestvideo+bestaudio/best",
+            "best": "bestvideo+bestaudio/18/b/best",
         }
-        return resolution_map.get(resolution, "bestvideo+bestaudio/best")
+        return resolution_map.get(resolution, "bestvideo+bestaudio/18/b/best")
 
     def download(
         self,
@@ -66,10 +66,7 @@ class VideoDownloader:
                 "youtube": {
                     "player_client": [
                         "android",
-                        "ios"
-                    ],
-                    "player_skip": [
-                        "configs"
+                        "web"
                     ]
                 }
             },
@@ -96,11 +93,11 @@ class VideoDownloader:
                 )
         except Exception as error:
             if "403" in str(error) or "Forbidden" in str(error):
-                # Fallback to single stream 'best' to bypass 403 Forbidden on cloud datacenter IPs
-                options["format"] = "best" if format_type == "video" else "bestaudio/best"
+                # Fallback to single format stream '18/b/best' to bypass 403 Forbidden on cloud datacenter IPs
+                options["format"] = "18/b/best" if format_type == "video" else "bestaudio/best"
                 options["extractor_args"] = {
                     "youtube": {
-                        "player_client": ["android"]
+                        "player_client": ["android", "web"]
                     }
                 }
                 with yt_dlp.YoutubeDL(options) as ydl:

@@ -13,9 +13,10 @@ class PlaylistExtractor:
             "js_runtimes": {"node": {}},
             "extractor_args": {
                 "youtube": {
-                    "player_client": ["android", "web_creator"]
+                    "player_client": ["android", "web"]
                 }
             },
+
         }
 
         try:
