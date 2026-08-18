@@ -337,11 +337,20 @@ with tab2:
                     if filepath and os.path.exists(filepath):
                         target_path = filepath
                     elif filepath:
-                        # Try relative to DOWNLOAD_DIRECTORY
                         from app.utils.filehandler import DOWNLOAD_DIRECTORY
                         cand = DOWNLOAD_DIRECTORY / Path(filepath).name
                         if cand.exists():
                             target_path = str(cand)
+
+                    # Ultimate fallback: scan DOWNLOAD_DIRECTORY for latest downloaded file
+                    if not target_path or not os.path.exists(target_path):
+                        from app.utils.filehandler import DOWNLOAD_DIRECTORY
+                        recent = [
+                            f for f in DOWNLOAD_DIRECTORY.glob("*")
+                            if f.is_file() and not f.name.endswith(".part") and not f.name.endswith(".ytdl")
+                        ]
+                        if recent:
+                            target_path = str(max(recent, key=lambda f: f.stat().st_mtime))
 
                     if target_path and os.path.exists(target_path):
                         with open(target_path, "rb") as f:
@@ -352,6 +361,7 @@ with tab2:
                         st.rerun()
                     else:
                         st.error(f"Downloaded file path error: {filepath}")
+
                 else:
                     st.error(f"Download failed: {error_msg}")
 

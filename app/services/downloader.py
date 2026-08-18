@@ -126,4 +126,15 @@ class VideoDownloader:
                         filepath = candidate
                         break
 
-            return filepath
+            # Ultimate fallback: grab most recently created file in download_dir
+            if not os.path.exists(filepath):
+                all_files = [
+                    f for f in self.download_dir.glob("*")
+                    if f.is_file() and not f.name.endswith(".part") and not f.name.endswith(".ytdl")
+                ]
+                if all_files:
+                    latest = max(all_files, key=lambda f: f.stat().st_mtime)
+                    filepath = str(latest)
+
+            return filepath
+
