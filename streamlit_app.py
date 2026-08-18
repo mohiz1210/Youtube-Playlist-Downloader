@@ -333,9 +333,20 @@ with tab2:
                 )
                 if success:
                     filepath = data.get("filepath", "")
-                    st.success(f"Download complete! Saved to: `{filepath}`")
+                    st.success("Download complete!")
+                    if filepath and os.path.exists(filepath):
+                        with open(filepath, "rb") as f:
+                            st.download_button(
+                                label=f"💾 Save File ({Path(filepath).name}) to Your Computer",
+                                data=f.read(),
+                                file_name=Path(filepath).name,
+                                mime="application/octet-stream",
+                                type="primary",
+                                use_container_width=True,
+                            )
                 else:
                     st.error(f"Download failed: {error_msg}")
+
 
 
 
