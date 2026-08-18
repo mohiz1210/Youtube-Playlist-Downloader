@@ -1,13 +1,15 @@
-import time
-import os
-import requests
-import streamlit as st
-from pathlib import Path
-
-
+from app.services.backend_client import (
+    extract_playlist_api,
+    start_playlist_download_api,
+    get_job_status_api,
+    control_job_api,
+    download_single_video_api,
+    get_zip_file_bytes,
+)
 
 CIRCULAR_LOGO = Path(__file__).parent / "assets" / "logo_circular.png"
 LOGO_PATH = CIRCULAR_LOGO if CIRCULAR_LOGO.exists() else (Path(__file__).parent / "assets" / "logo.png")
+
 
 # Page Configuration
 st.set_page_config(
@@ -161,20 +163,14 @@ with tab1:
 
     if extract_btn and playlist_url:
         with st.spinner("Extracting playlist information..."):
-            try:
-                res = requests.post(
-                    f"{API_BASE_URL}/playlist/extract",
-                    json={"url": playlist_url}
-                )
-                if res.status_code == 200:
-                    st.session_state["playlist_info"] = res.json()
-                    if "active_job_id" in st.session_state:
-                        del st.session_state["active_job_id"]
-                    st.success("Playlist extracted successfully!")
-                else:
-                    st.error(f"Error extracting playlist: {res.json().get('detail', res.text)}")
-            except Exception as e:
-                st.error(f"Could not connect to backend server ({e}). Make sure FastAPI app is running.")
+            success, data, error_msg = extract_playlist_api(API_BASE_URL, playlist_url)
+            if success:
+                st.session_state["playlist_info"] = data
+                if "active_job_id" in st.session_state:
+                    del st.session_state["active_job_id"]
+                st.success("Playlist extracted successfully!")
+            else:
+                st.error(f"Error extracting playlist: {error_msg}")
 
     # ---------------------------------------------------------
     # CASE 1: ACTIVE DOWNLOAD JOB RUNNING OR FINISHED
@@ -195,33 +191,27 @@ with tab1:
                 st.session_state["clear_playlist_input"] = True
                 st.rerun()
 
-
-
-
-
         col_c1, col_c2, col_c3, col_c4 = st.columns(4)
         with col_c1:
             if st.button("⏸️ Pause", key="pause_btn"):
-                requests.post(f"{API_BASE_URL}/playlist/jobs/{job_id}/pause")
+                control_job_api(API_BASE_URL, job_id, "pause")
                 st.rerun()
         with col_c2:
             if st.button("▶️ Resume", key="resume_btn"):
-                requests.post(f"{API_BASE_URL}/playlist/jobs/{job_id}/resume")
+                control_job_api(API_BASE_URL, job_id, "resume")
                 st.rerun()
         with col_c3:
             if st.button("🛑 Cancel", key="cancel_btn"):
-                requests.post(f"{API_BASE_URL}/playlist/jobs/{job_id}/cancel")
+                control_job_api(API_BASE_URL, job_id, "cancel")
                 st.rerun()
         with col_c4:
             if st.button("🔄 Retry Failed", key="retry_btn"):
-                requests.post(f"{API_BASE_URL}/playlist/jobs/{job_id}/retry")
+                control_job_api(API_BASE_URL, job_id, "retry")
                 st.rerun()
 
         try:
-            status_res = requests.get(f"{API_BASE_URL}/playlist/status/{job_id}")
-            if status_res.status_code == 200:
-                job_data = status_res.json()
-
+            job_data = get_job_status_api(API_BASE_URL, job_id)
+            if job_data:
                 st.progress(min(1.0, max(0.0, job_data["progress"] / 100.0)))
                 
                 m1, m2, m3, m4 = st.columns(4)
@@ -250,21 +240,19 @@ with tab1:
                     st.balloons()
                     st.success("Download process completed!")
                     
-                    try:
-                        zip_res = requests.get(f"{API_BASE_URL}/download/zip/{job_id}")
-                        if zip_res.status_code == 200:
-                            st.download_button(
-                                label="💾 Save Full Playlist (.zip)",
-                                data=zip_res.content,
-                                file_name=f"playlist_{job_id}.zip",
-                                mime="application/zip",
-                                type="primary",
-                                use_container_width=True,
-                            )
-                    except Exception:
-                        pass
+                    zip_data = get_zip_file_bytes(API_BASE_URL, job_id)
+                    if zip_data:
+                        st.download_button(
+                            label="💾 Save Full Playlist (.zip)",
+                            data=zip_data,
+                            file_name=f"playlist_{job_id}.zip",
+                            mime="application/zip",
+                            type="primary",
+                            use_container_width=True,
+                        )
 
                 elif job_data["status"] in ("queued", "downloading"):
+                    import time
                     time.sleep(2)
                     st.rerun()
 
@@ -301,25 +289,19 @@ with tab1:
 
         if st.button("🚀 Start Downloading Playlist", type="primary", use_container_width=True):
             with st.spinner("Starting playlist download..."):
-                try:
-                    payload = {
-                        "url": playlist_url,
-                        "format_type": format_type,
-                        "resolution": resolution,
-                        "audio_format": audio_format,
-                        "selected_video_ids": selected_ids if selected_ids else None,
-                    }
-                    res = requests.post(f"{API_BASE_URL}/playlist/download", json=payload)
-                    if res.status_code == 202:
-                        job_data = res.json()
-                        st.session_state["active_job_id"] = job_data["job_id"]
-                        st.rerun()
-                    else:
-                        st.error(f"Error starting download: {res.text}")
-                except Exception as e:
-                    st.error(f"Failed to start download job: {e}")
-
-
+                success, job_data, error_msg = start_playlist_download_api(
+                    API_BASE_URL,
+                    playlist_url,
+                    format_type,
+                    resolution,
+                    audio_format,
+                    selected_ids if selected_ids else None,
+                )
+                if success:
+                    st.session_state["active_job_id"] = job_data["job_id"]
+                    st.rerun()
+                else:
+                    st.error(f"Error starting download: {error_msg}")
 
 
 # =========================================================
@@ -334,25 +316,20 @@ with tab2:
 
     if st.button("📥 Download Single Video", type="primary"):
         if video_url:
-            with st.spinner("Downloading video to Windows Downloads folder... Please wait."):
-                try:
-                    payload = {
-                        "url": video_url,
-                        "format_type": format_type,
-                        "resolution": resolution,
-                        "audio_format": audio_format,
-                    }
+            with st.spinner("Downloading video... Please wait."):
+                success, data, error_msg = download_single_video_api(
+                    API_BASE_URL,
+                    video_url,
+                    format_type,
+                    resolution,
+                    audio_format,
+                )
+                if success:
+                    filepath = data.get("filepath", "")
+                    st.success(f"Download complete! Saved to: `{filepath}`")
+                else:
+                    st.error(f"Download failed: {error_msg}")
 
-                    res = requests.post(f"{API_BASE_URL}/download/video", json=payload)
-
-                    if res.status_code == 200:
-                        data = res.json()
-                        filepath = data.get("filepath", "")
-                        st.success(f"Download complete! Saved to Windows Downloads folder: `{filepath}`")
-                    else:
-                        st.error(f"Download failed: {res.text}")
-                except Exception as e:
-                    st.error(f"Connection error: {e}")
 
 
 
