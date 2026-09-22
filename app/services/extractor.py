@@ -22,13 +22,13 @@ class PlaylistExtractor:
             "extract_flat": True,
             "extractor_args": {
                 "youtube": {
-                    "player_client": ["android", "ios", "mweb"],
-                    "player_skip": ["webpage", "configs"],
+                    "player_client": ["android", "ios", "web", "mweb"],
                 }
             },
             **({"impersonate": IMPERSONATE_TARGET} if IMPERSONATE_TARGET else {}),
             **({"cookiefile": cookiefile} if (cookiefile and os.path.exists(cookiefile)) else {}),
         }
+
 
 
         try:

@@ -30,8 +30,9 @@ pydantic-settings==2.10.1
 # pushed unrelated code. Bump this floor whenever downloads start failing
 # with an extraction error and yt-dlp's release notes look relevant —
 # changing the line is what forces a re-resolve on the next deploy.
-yt-dlp[default,curl-cffi]>=2026.7.4
+yt-dlp[default,curl-cffi]>=2026.8.19
 aiofiles==24.1.0
+
 imageio-ffmpeg
 
 # Frontend

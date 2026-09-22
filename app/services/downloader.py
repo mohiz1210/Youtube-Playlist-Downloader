@@ -152,11 +152,11 @@ class VideoDownloader:
             "check_formats": None,
             "extractor_args": {
                 "youtube": {
-                    "player_client": ["android", "android_vr"],
-                    "player_skip": ["webpage", "configs"],
+                    "player_client": ["android", "ios", "web", "mweb"],
                 }
             },
         }
+
 
  
         if FFMPEG_EXE:
@@ -395,7 +395,8 @@ class VideoDownloader:
             print(error_message)
             print("=" * 60)
 
-            fallback_clients = ["android", "android_vr", "mweb", "ios", "tv_embedded"]
+            fallback_clients = ["ios", "android", "mweb", "tv", "android_vr"]
+
             fallback_formats = (
                 ["bestvideo*+bestaudio/best", "b/best/worst", "18/22/b/best"]
                 if format_type == "video"
@@ -434,6 +435,9 @@ class VideoDownloader:
                             f"Recovery with player_client={client}, format={fmt} failed: {fb_err}"
                         )
                         continue
+                if success:
+                    break
+
             if not success:
                 print("Standard fallback clients failed. Attempting direct urllib stream extraction recovery...")
                 direct_ok, direct_path = self._download_direct_stream(url)
