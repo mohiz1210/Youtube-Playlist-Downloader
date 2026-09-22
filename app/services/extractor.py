@@ -1,6 +1,8 @@
+import os
 import yt_dlp
 
 from app.core.exceptions import PlaylistError
+from app.services.downloader import get_default_cookiefile
 
 try:
     import curl_cffi  # noqa: F401
@@ -14,6 +16,7 @@ except Exception:
 class PlaylistExtractor:
 
     def extract(self, url: str):
+        cookiefile = get_default_cookiefile()
         options = {
             "quiet": True,
             "extract_flat": True,
@@ -24,7 +27,9 @@ class PlaylistExtractor:
                 }
             },
             **({"impersonate": IMPERSONATE_TARGET} if IMPERSONATE_TARGET else {}),
+            **({"cookiefile": cookiefile} if (cookiefile and os.path.exists(cookiefile)) else {}),
         }
+
 
         try:
             with yt_dlp.YoutubeDL(options) as ydl:

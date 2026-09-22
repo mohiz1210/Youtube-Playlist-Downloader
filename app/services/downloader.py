@@ -31,15 +31,55 @@ except Exception:
 from app.utils.filehandler import create_download_directory
 
 
+import tempfile
+
+def get_default_cookiefile() -> str | None:
+    """Find YouTube cookies from .env (file or text) or project directory."""
+    # 1. Direct file path from .env / environment
+    cookie_env = os.environ.get("YTDLP_COOKIES_FILE")
+    if cookie_env:
+        resolved_path = Path(cookie_env)
+        if not resolved_path.is_absolute():
+            project_root = Path(__file__).resolve().parent.parent.parent
+            resolved_path = project_root / cookie_env
+        if resolved_path.is_file() and resolved_path.stat().st_size > 0:
+            return str(resolved_path)
+
+    # 2. Raw cookie text in .env / environment (ideal for cloud/container deployments)
+    cookie_text = os.environ.get("YTDLP_COOKIES_TEXT")
+    if cookie_text and cookie_text.strip():
+        # Clean escaped newlines if coming from quoted env string
+        cleaned_text = cookie_text.encode("utf-8").decode("unicode_escape").strip()
+        temp_cookie_path = Path(tempfile.gettempdir()) / "ytdlp_env_cookies.txt"
+        temp_cookie_path.write_text(cleaned_text, encoding="utf-8")
+        return str(temp_cookie_path)
+
+    # 3. Project directory fallback
+    project_root = Path(__file__).resolve().parent.parent.parent
+    candidates = [
+        project_root / "cookies.txt",
+        project_root / "app" / "services" / "www.youtube.com_cookies (1).txt",
+        project_root / "www.youtube.com_cookies (1).txt",
+    ]
+    for candidate in candidates:
+        if candidate.is_file() and candidate.stat().st_size > 0:
+            return str(candidate)
+    return None
+
+
+
 class VideoDownloader:
 
     def __init__(
         self,
         subfolder: str | None = None,
         proxy: str | None = None,
+        cookiefile: str | None = None,
     ):
         self.download_dir = create_download_directory(subfolder)
         self.proxy = proxy or os.environ.get("YTDLP_PROXY")
+        self.cookiefile = cookiefile or get_default_cookiefile()
+
 
 
     # ---------------------------------------------------------
@@ -125,8 +165,12 @@ class VideoDownloader:
         if IMPERSONATE_TARGET:
             options["impersonate"] = IMPERSONATE_TARGET
 
+        if self.cookiefile and os.path.exists(self.cookiefile):
+            options["cookiefile"] = self.cookiefile
+
         if self.proxy:
             options["proxy"] = self.proxy
+
 
  
         if format_type == "audio":
@@ -207,6 +251,7 @@ class VideoDownloader:
             opts["impersonate"] = IMPERSONATE_TARGET
         if self.cookiefile and os.path.exists(self.cookiefile):
             opts["cookiefile"] = self.cookiefile
+
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -312,7 +357,13 @@ class VideoDownloader:
         if self.proxy:
             print("Proxy: enabled")
 
+        if self.cookiefile and os.path.exists(self.cookiefile):
+            print(f"Cookies: loaded from {self.cookiefile}")
+        else:
+            print("Cookies: none (anonymous request)")
+
         if IMPERSONATE_TARGET:
+
             print(f"Impersonate: {IMPERSONATE_TARGET}")
         else:
             print(
