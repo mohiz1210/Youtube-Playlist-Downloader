@@ -9,12 +9,12 @@ playlist_service = PlaylistService()
 playlist_downloader = PlaylistDownloader()
 
 
-def extract_playlist_api(api_base_url: str, url: str, cookies_txt: str | None = None):
+def extract_playlist_api(api_base_url: str, url: str):
     """Extract playlist info via FastAPI HTTP or direct Python fallback for Streamlit Cloud."""
     try:
         res = requests.post(
             f"{api_base_url}/playlist/extract",
-            json={"url": url, "cookies_txt": cookies_txt},
+            json={"url": url},
             timeout=0.5,
         )
         if res.status_code == 200:
@@ -23,7 +23,7 @@ def extract_playlist_api(api_base_url: str, url: str, cookies_txt: str | None = 
         return False, None, detail
     except Exception:
         try:
-            data = playlist_service.get_playlist(url, cookies_txt=cookies_txt)
+            data = playlist_service.get_playlist(url)
             return True, data, None
         except Exception as e:
             return False, None, str(e)
@@ -36,7 +36,6 @@ def start_playlist_download_api(
     resolution: str,
     audio_format: str,
     selected_video_ids: list[str] | None = None,
-    cookies_txt: str | None = None,
 ):
     """Start playlist download via FastAPI HTTP or direct Python background thread fallback."""
     payload = {
@@ -45,7 +44,6 @@ def start_playlist_download_api(
         "resolution": resolution,
         "audio_format": audio_format,
         "selected_video_ids": selected_video_ids,
-        "cookies_txt": cookies_txt,
     }
     try:
         res = requests.post(
@@ -59,7 +57,7 @@ def start_playlist_download_api(
         return False, None, detail
     except Exception:
         try:
-            playlist = playlist_service.get_playlist(url, cookies_txt=cookies_txt)
+            playlist = playlist_service.get_playlist(url)
             videos_to_download = playlist["videos"]
             if selected_video_ids:
                 videos_to_download = [
@@ -74,7 +72,6 @@ def start_playlist_download_api(
                 total_videos=len(videos_to_download),
                 videos=videos_to_download,
                 playlist_title=playlist["title"],
-                cookies_txt=cookies_txt,
             )
 
             thread = threading.Thread(
@@ -85,7 +82,6 @@ def start_playlist_download_api(
                     "resolution": resolution,
                     "audio_format": audio_format,
                     "playlist_title": playlist["title"],
-                    "cookies_txt": cookies_txt,
                 },
                 daemon=True,
             )
@@ -137,7 +133,6 @@ def download_single_video_api(
     format_type: str,
     resolution: str,
     audio_format: str,
-    cookies_txt: str | None = None,
 ):
     """Download single video via HTTP or direct Python execution fallback."""
     payload = {
@@ -145,7 +140,6 @@ def download_single_video_api(
         "format_type": format_type,
         "resolution": resolution,
         "audio_format": audio_format,
-        "cookies_txt": cookies_txt,
     }
     try:
         res = requests.post(f"{api_base_url}/download/video", json=payload, timeout=0.5)
@@ -154,9 +148,7 @@ def download_single_video_api(
         return False, None, res.text
     except Exception:
         try:
-            # Built per-call (not module-level/shared) so each visitor's own
-            # cookies_txt is scoped to just their request.
-            video_downloader = VideoDownloader(cookies_txt=cookies_txt)
+            video_downloader = VideoDownloader()
             filepath = video_downloader.download(
                 url,
                 format_type=format_type,
@@ -166,6 +158,7 @@ def download_single_video_api(
             return True, {"status": "success", "filepath": filepath}, None
         except Exception as e:
             return False, None, str(e)
+
 
 
 import os

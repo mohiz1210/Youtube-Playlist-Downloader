@@ -1,8 +1,13 @@
-from fastapi import APIRouter
-from fastapi import HTTPException
+import shutil
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 
 from app.schemas.download import DownloadRequest
 from app.services.downloader import VideoDownloader
+from app.jobs.manager import job_manager
+from app.utils.filehandler import DOWNLOAD_DIRECTORY, sanitize_folder_name
 
 router = APIRouter()
 
@@ -11,14 +16,9 @@ router = APIRouter()
 async def download_video(
     payload: DownloadRequest
 ):
-
     try:
+        downloader = VideoDownloader()
 
-        # Built per-request (not module-level/shared) so each visitor's own
-        # cookies_txt is scoped to just their request — a shared instance
-        # would risk one visitor's cookies leaking into another's
-        # concurrent download.
-        downloader = VideoDownloader(cookies_txt=payload.cookies_txt)
 
         file_path = downloader.download(
             payload.url,
@@ -27,17 +27,12 @@ async def download_video(
             audio_format=payload.audio_format,
         )
 
-
-
-
         return {
             "status": "success",
             "filepath": file_path,
         }
 
-
     except Exception as error:
-
         raise HTTPException(
             status_code=500,
             detail=str(error)
@@ -47,14 +42,6 @@ async def download_video(
 # =========================================================
 # FILE SERVING & ZIP DOWNLOAD ENDPOINTS
 # =========================================================
-
-import os
-import shutil
-from pathlib import Path
-from fastapi.responses import FileResponse
-from app.jobs.manager import job_manager
-from app.utils.filehandler import DOWNLOAD_DIRECTORY
-
 
 @router.get("/download/file")
 async def get_downloaded_file(filepath: str):
@@ -69,9 +56,6 @@ async def get_downloaded_file(filepath: str):
         filename=file_path.name,
         media_type="application/octet-stream"
     )
-
-
-from app.utils.filehandler import DOWNLOAD_DIRECTORY, sanitize_folder_name
 
 
 @router.get("/download/zip/{job_id}")
@@ -107,4 +91,5 @@ async def download_job_zip(job_id: str):
         filename=f"{zip_name}.zip",
         media_type="application/zip"
     )
-
+
+

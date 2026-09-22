@@ -146,7 +146,6 @@ class PlaylistDownloader:
         resolution: str = "best",
         audio_format: str = "mp3",
         playlist_title: str | None = None,
-        cookies_txt: str | None = None,
     ):
         video_id = video.get("id")
         video_url = video.get("url")
@@ -181,8 +180,8 @@ class PlaylistDownloader:
 
             downloader = VideoDownloader(
                 subfolder=playlist_title,
-                cookies_txt=cookies_txt,
             )
+
 
             filepath = downloader.download(
                 video_url,
@@ -294,7 +293,6 @@ class PlaylistDownloader:
         resolution: str = "best",
         audio_format: str = "mp3",
         playlist_title: str | None = None,
-        cookies_txt: str | None = None,
     ):
 
         job_manager.update_job(
@@ -327,8 +325,8 @@ class PlaylistDownloader:
                     resolution=resolution,
                     audio_format=audio_format,
                     playlist_title=playlist_title,
-                    cookies_txt=cookies_txt,
                 )
+
 
                 futures.append(
                     future
@@ -402,4 +400,4 @@ class PlaylistDownloader:
         print(
             f"[JOB {job_id}] "
             f"Finished"
-        )
+        )

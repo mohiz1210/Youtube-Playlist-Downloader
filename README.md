@@ -15,7 +15,7 @@ A full-featured FastAPI backend and Streamlit web interface for downloading YouT
   - **Selective Download**: Choose specific videos to download from a playlist.
 - **Job Control**: Live status tracking, pause, resume, cancel, and retry failed downloads.
 - **File Delivery & Zip Export**: Direct file download endpoints and one-click `.zip` export for full playlist jobs.
-- **Distributed Queues Support**: Configured for Celery & Redis background task processing with threading fallback.
+- **Background Task Management**: Efficient threaded background job execution with progress tracking, pause/resume, cancel, and retry capabilities.
 - **Automated Test Suite**: Integrated unit and API tests with Pytest.
 
 ---
@@ -27,12 +27,11 @@ Playlist Downloader/
 ├── app/
 │   ├── api/
 │   │   └── routes/         # FastAPI endpoints (health, playlist, download)
-│   ├── core/               # Configuration, logging, celery setup, exceptions
-│   ├── jobs/               # In-memory job manager and Celery task definitions
-│   ├── models/             # Data models placeholder
+│   ├── core/               # Configuration, logging, exceptions
+│   ├── jobs/               # In-memory job manager and task execution
 │   ├── schemas/            # Pydantic schemas for requests and responses
 │   ├── services/           # Downloader, Extractor, and Playlist services
-│   ├── utils/              # Directory and validator helpers
+│   ├── utils/              # Cookie, file handler, and validator helpers
 │   └── main.py             # FastAPI entrypoint
 ├── downloads/              # Default downloaded files directory
 ├── tests/                  # Pytest test suite

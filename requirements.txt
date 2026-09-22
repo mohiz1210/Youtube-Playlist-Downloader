@@ -34,18 +34,6 @@ yt-dlp[default,curl-cffi]>=2026.7.4
 aiofiles==24.1.0
 imageio-ffmpeg
 
-# Background processing
-
-redis==6.4.0
-celery==5.5.3
-
-
-# Database
-
-sqlalchemy==2.0.43
-sqlmodel==0.0.24
-
-
 # Frontend
 streamlit>=1.30.0
 

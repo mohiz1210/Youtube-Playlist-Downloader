@@ -29,7 +29,6 @@ except Exception:
     IMPERSONATE_TARGET = None
 
 from app.utils.filehandler import create_download_directory
-from app.utils.cookies import materialize_cookies_txt, delete_cookiefile
 
 
 class VideoDownloader:
@@ -37,25 +36,11 @@ class VideoDownloader:
     def __init__(
         self,
         subfolder: str | None = None,
-        cookies_txt: str | None = None,
         proxy: str | None = None,
     ):
         self.download_dir = create_download_directory(subfolder)
-        # Two options only, nothing else:
-        #   A. No cookies — try the download as a normal anonymous
-        #      request. Works for public videos/playlists most of the
-        #      time; YouTube may still demand sign-in on some IPs.
-        #   B. cookies_txt — cookies.txt CONTENT this ONE visitor supplied
-        #      for THIS ONE request (uploaded/pasted in the UI). Never a
-        #      server-wide/shared credential — materialized to a private
-        #      temp file scoped to this instance and deleted by
-        #      download() the moment the job finishes, win or lose.
-        self.cookiefile = materialize_cookies_txt(cookies_txt)
-        # Optional proxy, e.g. "http://user:pass@host:port". Not a
-        # cookie/account mechanism — just network routing — so it applies
-        # equally under both options above. Can be supplied via env var so
-        # you don't have to hardcode credentials anywhere.
         self.proxy = proxy or os.environ.get("YTDLP_PROXY")
+
 
     # ---------------------------------------------------------
     # FORMAT SELECTION
@@ -140,11 +125,9 @@ class VideoDownloader:
         if IMPERSONATE_TARGET:
             options["impersonate"] = IMPERSONATE_TARGET
 
-        if self.cookiefile and os.path.exists(self.cookiefile):
-            options["cookiefile"] = self.cookiefile
-
         if self.proxy:
             options["proxy"] = self.proxy
+
  
         if format_type == "audio":
             options["postprocessors"] = [
@@ -276,23 +259,16 @@ class VideoDownloader:
         resolution: str = "best",
         audio_format: str = "mp3",
     ):
-
         if not url:
             raise ValueError("Video URL cannot be empty.")
 
-        try:
-            return self._download(
-                url,
-                progress_hook=progress_hook,
-                format_type=format_type,
-                resolution=resolution,
-                audio_format=audio_format,
-            )
-        finally:
-            # Option B's cookies.txt is only ever meant to live for this
-            # one job — delete it now whether the download succeeded or
-            # failed, so it never lingers on disk past this request.
-            delete_cookiefile(self.cookiefile)
+        return self._download(
+            url,
+            progress_hook=progress_hook,
+            format_type=format_type,
+            resolution=resolution,
+            audio_format=audio_format,
+        )
 
     def _download(
         self,
@@ -302,7 +278,6 @@ class VideoDownloader:
         resolution: str = "best",
         audio_format: str = "mp3",
     ):
-
         output_template = os.path.join(
             str(self.download_dir),
             "%(title)s.%(ext)s",
@@ -333,11 +308,6 @@ class VideoDownloader:
             print(f"FFmpeg: {FFMPEG_EXE}")
         else:
             print("FFmpeg: NOT FOUND")
-
-        if self.cookiefile:
-            print("Cookies: visitor-supplied (Option B)")
-        else:
-            print("Cookies: none (Option A — anonymous request)")
 
         if self.proxy:
             print("Proxy: enabled")
@@ -374,23 +344,8 @@ class VideoDownloader:
             print(error_message)
             print("=" * 60)
 
-            # Fallback client recovery sequence.
-            # Ordered by which clients currently tend to avoid
-            # PO-token / 403 issues most often — this changes as
-            # YouTube adjusts its anti-bot rules, so revisit periodically.
-            # (mweb is deliberately NOT prioritized here despite sometimes
-            # failing with a different-looking error — verified it only
-            # ever returns storyboard/thumbnail formats via this
-            # extraction path, never real video/audio, regardless of IP.)
             fallback_clients = ["android", "android_vr", "mweb", "ios", "tv_embedded"]
             fallback_formats = (
-                # bestvideo*+bestaudio FIRST: some clients only serve
-                # split video-only/audio-only DASH streams, never a
-                # combined one — a selector that only ever asks for a
-                # combined format ("b/best") matches nothing there even
-                # when real formats exist, surfacing as a confusing
-                # "Requested format is not available" instead of trying
-                # the merge that would actually work.
                 ["bestvideo*+bestaudio/best", "b/best/worst", "18/22/b/best"]
                 if format_type == "video"
                 else ["bestaudio/best/worst"]
@@ -437,62 +392,12 @@ class VideoDownloader:
                     success = True
                     print(f"Direct stream recovery succeeded: {direct_path}")
 
-
             if not success:
-                # Check BOTH the primary error and the fallback-client error —
-                # the primary failure is often a bare "403 Forbidden" while the
-                # real "sign in to confirm you're not a bot" text only shows up
-                # in the fallback error, so checking error_message alone missed
-                # it and showed the less useful generic proxy hint instead.
-                combined_message = (
-                    f"{error_message} {last_fallback_err or ''}"
-                ).lower()
-                is_bot_check = (
-                    "sign in" in combined_message
-                    or "not a bot" in combined_message
-                )
-                if is_bot_check and not self.cookiefile:
-                    # Option A (no cookies) hit YouTube's sign-in check —
-                    # point the user at Option B instead of anything
-                    # server-side, since there is no server-side fallback.
-                    hint = (
-                        " This video/playlist requires signing in to "
-                        "YouTube to confirm you're not a bot — a plain, "
-                        "cookie-less request isn't enough here. Export "
-                        "cookies.txt from a browser you're logged into "
-                        "YouTube with (e.g. the \"Get cookies.txt LOCALLY\" "
-                        "extension) and upload or paste it in the app's "
-                        "\"YouTube Cookies\" section, then try again. Your "
-                        "cookies are used only for this one download and "
-                        "deleted right after — never stored or shared."
-                    )
-                elif is_bot_check:
-                    # Option B (their own cookies) was used and it STILL
-                    # hit the check — almost always a stale/invalid export.
-                    hint = (
-                        " YouTube is still asking for authentication even "
-                        "though cookies.txt was provided — they're likely "
-                        "expired or invalid (YouTube session cookies stop "
-                        "working after a while, especially the "
-                        "__Secure-3PSID/HSID family). Log into "
-                        "youtube.com again in your browser, re-export a "
-                        "fresh cookies.txt, and upload it again. If a "
-                        "fresh export still fails immediately, this may "
-                        "be a datacenter/cloud IP block that cookies "
-                        "alone can't get around; consider routing through "
-                        "a residential proxy (set YTDLP_PROXY)."
-                    )
-                else:
-                    hint = (
-                        " This looks like it may be a datacenter/cloud IP block "
-                        "rather than a config issue — if you're running on "
-                        "Streamlit Cloud or similar, consider routing through "
-                        "a residential proxy (set YTDLP_PROXY or pass proxy=...)."
-                    )
                 raise RuntimeError(
                     f"yt-dlp download failed: {error_message} "
-                    f"(Fallback error: {last_fallback_err}){hint}"
+                    f"(Fallback error: {last_fallback_err})"
                 ) from (last_fallback_err or error)
+
 
         # -----------------------------------------------------
         # Find final file

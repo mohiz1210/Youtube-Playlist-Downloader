@@ -6,9 +6,10 @@ class PlaylistService:
     def __init__(self):
         self.extractor = PlaylistExtractor()
 
-    def get_playlist(self, url: str, cookies_txt: str | None = None):
+    def get_playlist(self, url: str):
 
-        data = self.extractor.extract(url, cookies_txt=cookies_txt)
+        data = self.extractor.extract(url)
+
 
         entries = data.get("entries", [])
 
